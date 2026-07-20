@@ -1,0 +1,22 @@
+{
+  "short_name": "Atharva Fleet",
+  "name": "Atharva Enterprises Fleet Manager",
+  "description": "Premium Fleet Management Web App for Atharva Enterprises",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1048/1048314.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1048/1048314.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0d1117",
+  "theme_color": "#1f2937",
+  "display": "standalone",
+  "orientation": "portrait"
+}
