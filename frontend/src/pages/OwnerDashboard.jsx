@@ -1,14 +1,30 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useAuth, API_BASE_URL } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext';
+import {
+  getOwnerDashboardData,
+  saveVehicle as dbSaveVehicle,
+  deleteVehicle as dbDeleteVehicle,
+  saveDriver as dbSaveDriver,
+  deleteDriver as dbDeleteDriver,
+  saveEarning as dbSaveEarning,
+  deleteEarning as dbDeleteEarning,
+  saveExpense as dbSaveExpense,
+  deleteExpense as dbDeleteExpense,
+  generateFinancialReport as dbGenerateReport,
+  getAdminCredentials,
+  updateAdminCredentials
+} from '../firebase/services';
 import {
   LayoutDashboard, Car, Users, IndianRupee, AlertTriangle, TrendingUp, Plus,
-  Edit2, Trash2, LogOut, Sun, Moon, FileText, Check, X, Eye, Download, Bell, Info
+  Edit2, Trash2, LogOut, Sun, Moon, FileText, Check, X, Eye, Download, Bell, Info,
+  Receipt, Wrench, Fuel, Key, Lock, CalendarDays, CalendarRange, ChevronLeft, ChevronRight, BarChart3
 } from 'lucide-react';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement,
   BarElement, ArcElement, Title, Tooltip, Legend, Filler
 } from 'chart.js';
 import { Line, Doughnut, Bar } from 'react-chartjs-2';
+import acLogo from '../assets/logo.png';
 
 // Register Chart.js components
 ChartJS.register(
@@ -32,10 +48,25 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
   // Modals state
   const [vehicleModal, setVehicleModal] = useState({ show: false, mode: 'add', data: null });
   const [driverModal, setDriverModal] = useState({ show: false, mode: 'add', data: null });
-  const [earningModal, setEarningModal] = useState({ show: false });
-  const [expenseModal, setExpenseModal] = useState({ show: false });
-  const [settleModal, setSettleModal] = useState({ show: false, calculation: null });
+  const [earningModal, setEarningModal] = useState({ show: false, mode: 'add', data: null });
+  const [expenseModal, setExpenseModal] = useState({ show: false, mode: 'add', data: null });
   const [receiptViewer, setReceiptViewer] = useState({ show: false, path: '' });
+  const [adminModal, setAdminModal] = useState(false);
+  const [adminCredsForm, setAdminCredsForm] = useState({ mobile: '', password: '', confirmPassword: '', name: '' });
+
+  // Filter state for Vehicle Expenses tab
+  const [expenseVehicleFilter, setExpenseVehicleFilter] = useState('');
+  const [expenseCategoryFilter, setExpenseCategoryFilter] = useState('');
+
+  // Periodic Analytics State (Day, Week, Month, Custom Range)
+  const [periodType, setPeriodType] = useState('day'); // 'day', 'week', 'month', 'custom'
+  const [selectedDay, setSelectedDay] = useState(new Date().toISOString().split('T')[0]);
+  const [weekOffset, setWeekOffset] = useState(0); // 0 = current week, -1 = last week, etc.
+  const [monthOffset, setMonthOffset] = useState(0); // 0 = current month, -1 = last month, etc.
+  const [customRange, setCustomRange] = useState({
+    start: new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0],
+    end: new Date().toISOString().split('T')[0]
+  });
 
   // Form states
   const [vehicleForm, setVehicleForm] = useState({
@@ -56,17 +87,6 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
     date: new Date().toISOString().split('T')[0], vehicle_id: '', driver_id: '',
     category: 'fuel', amount: '', description: ''
   });
-  const [settleForm, setSettleForm] = useState({
-    driver_id: '', date: new Date().toISOString().split('T')[0]
-  });
-  const [paySettlementForm, setPaySettlementForm] = useState({
-    id: null, paid_to: ''
-  });
-  const [settleFields, setSettleFields] = useState({
-    paid_to_driver: 0,
-    paid_to: 'bank of india',
-    status: 'paid'
-  });
 
   // Reports state
   const [reportsFilter, setReportsFilter] = useState({
@@ -75,49 +95,21 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
   });
   const [reportsData, setReportsData] = useState(null);
 
-  // Fetch all administrative data
+  // Fetch all administrative data from Firebase Firestore
   const fetchData = async () => {
     setLoading(true);
     setError('');
-    const token = localStorage.getItem('token');
     try {
-      const headers = { 'Authorization': `Bearer ${token}` };
-      
-      // Fetch core dashboard details
-      const statsRes = await fetch(`${API_BASE_URL}/owner/stats`, { headers });
-      if (!statsRes.ok) throw new Error('Failed to fetch stats');
-      const statsData = await statsRes.json();
-      setStats(statsData);
-
-      // Fetch Fleet list
-      const vehiclesRes = await fetch(`${API_BASE_URL}/owner/vehicles`, { headers });
-      const vehiclesData = await vehiclesRes.json();
-      setVehicles(vehiclesData);
-
-      // Fetch Driver registry
-      const driversRes = await fetch(`${API_BASE_URL}/owner/drivers`, { headers });
-      const driversData = await driversRes.json();
-      setDrivers(driversData);
-
-      // Fetch Log summaries
-      const earningsRes = await fetch(`${API_BASE_URL}/owner/earnings`, { headers });
-      const earningsData = await earningsRes.json();
-      setEarnings(earningsData);
-
-      const expensesRes = await fetch(`${API_BASE_URL}/owner/expenses`, { headers });
-      const expensesData = await expensesRes.json();
-      setExpenses(expensesData);
-
-      const settlementsRes = await fetch(`${API_BASE_URL}/owner/settlements`, { headers });
-      const settlementsData = await settlementsRes.json();
-      setSettlements(settlementsData);
-
-      const notificationsRes = await fetch(`${API_BASE_URL}/owner/notifications`, { headers });
-      const notificationsData = await notificationsRes.json();
-      setNotifications(notificationsData);
-
+      const data = await getOwnerDashboardData();
+      setStats(data.stats);
+      setVehicles(data.vehicles);
+      setDrivers(data.drivers);
+      setEarnings(data.earnings);
+      setExpenses(data.expenses || []);
+      setSettlements(data.settlements || []);
+      setNotifications(data.notifications || []);
     } catch (err) {
-      console.error(err);
+      console.error("Dashboard data load error:", err);
       setError('Error loading dashboard data. Please try again.');
     } finally {
       setLoading(false);
@@ -131,16 +123,11 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
   // Handle reports generation
   const handleGenerateReport = async (e) => {
     if (e) e.preventDefault();
-    const token = localStorage.getItem('token');
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/owner/reports?start_date=${reportsFilter.start_date}&end_date=${reportsFilter.end_date}`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      if (!response.ok) throw new Error('Failed to fetch reports');
-      const data = await response.json();
+      const data = await dbGenerateReport(reportsFilter.start_date, reportsFilter.end_date);
       setReportsData(data);
     } catch (err) {
+      console.error("Report generation error:", err);
       alert(err.message);
     }
   };
@@ -151,48 +138,32 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
     }
   }, [activeTab]);
 
-  // --- CRUD FUNCTIONS ---
+  // --- CRUD FUNCTIONS (Firebase Firestore) ---
 
   // Vehicles
   const saveVehicle = async (e) => {
     e.preventDefault();
-    const token = localStorage.getItem('token');
-    const method = vehicleModal.mode === 'add' ? 'POST' : 'PUT';
-    const url = vehicleModal.mode === 'add' 
-      ? `${API_BASE_URL}/owner/vehicles` 
-      : `${API_BASE_URL}/owner/vehicles/${vehicleModal.data.id}`;
-
     try {
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(vehicleForm)
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message);
-      
+      const targetId = vehicleModal.mode === 'add' ? null : vehicleModal.data.id;
+      await dbSaveVehicle(vehicleForm, targetId);
       setVehicleModal({ show: false, mode: 'add', data: null });
-      fetchData();
-      alert(data.message || 'Vehicle saved!');
+      setVehicleForm({
+        vehicle_number: '', model_name: '', fuel_type: 'CNG',
+        insurance_expiry: '', permit_expiry: '', puc_expiry: '',
+        service_due: '', tyre_replacement: '', status: 'active'
+      });
+      await fetchData();
+      alert('Vehicle saved successfully!');
     } catch (err) {
       alert(err.message);
     }
   };
 
   const deleteVehicle = async (id) => {
-    if (!confirm('Are you sure you want to remove this vehicle? All linked earnings and expenses will be deleted.')) return;
-    const token = localStorage.getItem('token');
+    if (!confirm('Are you sure you want to remove this vehicle? All linked records will be affected.')) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/owner/vehicles/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message);
-      fetchData();
+      await dbDeleteVehicle(id);
+      await fetchData();
     } catch (err) {
       alert(err.message);
     }
@@ -201,27 +172,16 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
   // Drivers
   const saveDriver = async (e) => {
     e.preventDefault();
-    const token = localStorage.getItem('token');
-    const method = driverModal.mode === 'add' ? 'POST' : 'PUT';
-    const url = driverModal.mode === 'add' 
-      ? `${API_BASE_URL}/owner/drivers` 
-      : `${API_BASE_URL}/owner/drivers/${driverModal.data.driver_id}`;
-
     try {
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(driverForm)
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message);
-
+      const targetId = driverModal.mode === 'add' ? null : (driverModal.data.driver_id || driverModal.data.id);
+      await dbSaveDriver(driverForm, targetId);
       setDriverModal({ show: false, mode: 'add', data: null });
-      fetchData();
-      alert(data.message || 'Driver saved!');
+      setDriverForm({
+        name: '', mobile: '', password: '', license_number: '',
+        joining_date: '', share_percentage: 50, assigned_vehicle_id: ''
+      });
+      await fetchData();
+      alert('Driver saved successfully!');
     } catch (err) {
       alert(err.message);
     }
@@ -229,15 +189,9 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
 
   const deleteDriver = async (id) => {
     if (!confirm('Are you sure you want to remove this driver? Driver account access will be revoked.')) return;
-    const token = localStorage.getItem('token');
     try {
-      const response = await fetch(`${API_BASE_URL}/owner/drivers/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message);
-      fetchData();
+      await dbDeleteDriver(id);
+      await fetchData();
     } catch (err) {
       alert(err.message);
     }
@@ -246,27 +200,17 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
   // Earnings
   const saveEarning = async (e) => {
     e.preventDefault();
-    const token = localStorage.getItem('token');
     try {
-      const response = await fetch(`${API_BASE_URL}/owner/earnings`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(earningForm)
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message);
-
-      setEarningModal({ show: false });
+      const targetId = earningModal.mode === 'edit' && earningModal.data ? earningModal.data.id : null;
+      await dbSaveEarning(earningForm, targetId);
+      setEarningModal({ show: false, mode: 'add', data: null });
       setEarningForm({
         date: new Date().toISOString().split('T')[0], vehicle_id: '', driver_id: '',
         amount_ola: '', amount_uber: '', amount_rapido: '', amount_private: '',
         expense: ''
       });
-      fetchData();
-      alert(data.message);
+      await fetchData();
+      alert(targetId ? 'Daily vehicle earnings updated successfully!' : 'Daily vehicle earnings saved successfully!');
     } catch (err) {
       alert(err.message);
     }
@@ -274,13 +218,9 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
 
   const deleteEarning = async (id) => {
     if (!confirm('Are you sure you want to delete this earning entry?')) return;
-    const token = localStorage.getItem('token');
     try {
-      await fetch(`${API_BASE_URL}/owner/earnings/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      fetchData();
+      await dbDeleteEarning(id);
+      await fetchData();
     } catch (err) {
       alert(err.message);
     }
@@ -289,163 +229,34 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
   // Expenses
   const saveExpense = async (e) => {
     e.preventDefault();
-    const token = localStorage.getItem('token');
     try {
-      const response = await fetch(`${API_BASE_URL}/owner/expenses`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(expenseForm)
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message);
-
-      setExpenseModal({ show: false });
+      const targetId = expenseModal.mode === 'edit' && expenseModal.data ? expenseModal.data.id : null;
+      await dbSaveExpense(expenseForm, targetId);
+      setExpenseModal({ show: false, mode: 'add', data: null });
       setExpenseForm({
-        date: new Date().toISOString().split('T')[0], vehicle_id: '', driver_id: '',
-        category: 'fuel', amount: '', description: ''
+        date: new Date().toISOString().split('T')[0], vehicle_id: '',
+        category: 'maintenance', amount: '', description: ''
       });
-      fetchData();
-      alert(data.message);
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  const handleUpdateExpenseStatus = async (id, status) => {
-    const token = localStorage.getItem('token');
-    try {
-      const response = await fetch(`${API_BASE_URL}/owner/expenses/${id}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ status })
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message);
-      fetchData();
+      await fetchData();
+      alert(targetId ? 'Vehicle expense updated successfully!' : 'Vehicle expense saved successfully!');
     } catch (err) {
       alert(err.message);
     }
   };
 
   const deleteExpense = async (id) => {
-    if (!confirm('Are you sure you want to delete this expense?')) return;
-    const token = localStorage.getItem('token');
+    if (!confirm('Are you sure you want to delete this vehicle expense entry?')) return;
     try {
-      await fetch(`${API_BASE_URL}/owner/expenses/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      fetchData();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  // Settlements
-  const calculateSettlement = async (e) => {
-    e.preventDefault();
-    const token = localStorage.getItem('token');
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/owner/settlements/calculate?driver_id=${settleForm.driver_id}&date=${settleForm.date}`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message);
-      }
-      const data = await response.json();
-      setSettleModal({ show: true, calculation: data });
-      setSettleFields({
-        paid_to_driver: data.driverShare,
-        paid_to: 'bank of india',
-        status: 'paid'
-      });
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  const saveSettlement = async () => {
-    const token = localStorage.getItem('token');
-    const payload = {
-      date: settleForm.date,
-      driver_id: settleForm.driver_id,
-      total_earnings: settleModal.calculation.totalEarnings,
-      fuel_expenses: settleModal.calculation.fuelExpenses,
-      other_expenses: settleModal.calculation.otherExpenses,
-      amount_after_expenses: settleModal.calculation.amountAfterExpenses,
-      driver_percentage: settleModal.calculation.driverPercentage,
-      driver_share: settleModal.calculation.driverShare,
-      owner_share: settleModal.calculation.ownerShare,
-      paid_to_driver: parseFloat(settleFields.paid_to_driver) || 0,
-      owner_net: settleModal.calculation.amountAfterExpenses - (parseFloat(settleFields.paid_to_driver) || 0),
-      paid_to: settleFields.paid_to,
-      status: settleFields.status
-    };
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/owner/settlements`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message);
-
-      setSettleModal({ show: false, calculation: null });
-      setSettleForm({ driver_id: '', date: new Date().toISOString().split('T')[0] });
-      fetchData();
-      alert('Settlement recorded successfully.');
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  const paySettlement = async (e) => {
-    e.preventDefault();
-    const token = localStorage.getItem('token');
-    try {
-      const response = await fetch(`${API_BASE_URL}/owner/settlements/${paySettlementForm.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ paid_to: paySettlementForm.paid_to })
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message);
-
-      setPaySettlementForm({ id: null, paid_to: '' });
-      fetchData();
-      alert('Settlement marked as PAID.');
+      await dbDeleteExpense(id);
+      await fetchData();
     } catch (err) {
       alert(err.message);
     }
   };
 
   // Mark notification as read
-  const markNotificationRead = async (id) => {
-    const token = localStorage.getItem('token');
-    try {
-      await fetch(`${API_BASE_URL}/owner/notifications/${id}/read`, {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      setNotifications(notifications.map(n => n.id === id ? { ...n, read_status: 1 } : n));
-    } catch (err) {
-      console.error(err);
-    }
+  const markNotificationRead = (id) => {
+    setNotifications(notifications.map(n => n.id === id ? { ...n, read_status: 1 } : n));
   };
 
   // --- EXPORT FUNCTIONALITY ---
@@ -457,7 +268,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
     let csvContent = "data:text/csv;charset=utf-8,";
     
     // Overall Stats
-    csvContent += "ATHARVA ENTERPRISES - FLEET PERFORMANCE REPORT\n";
+    csvContent += "AC FLEET - FLEET PERFORMANCE REPORT\n";
     csvContent += `Period: ,${reportsData.period.start_date} to ${reportsData.period.end_date}\n\n`;
     csvContent += `Total Earnings,Total Expenses,Net Profit\n`;
     csvContent += `₹${reportsData.totalEarnings},₹${reportsData.totalExpenses},₹${reportsData.netProfit}\n\n`;
@@ -532,6 +343,92 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
     setDriverModal({ show: true, mode: 'edit', data: d });
   };
 
+  const openAddEarning = () => {
+    setEarningForm({
+      date: new Date().toISOString().split('T')[0],
+      vehicle_id: vehicles.length > 0 ? vehicles[0].id : '',
+      driver_id: drivers.length > 0 ? (drivers[0].driver_id || drivers[0].id) : '',
+      amount_ola: '', amount_uber: '', amount_rapido: '', amount_private: '',
+      expense: ''
+    });
+    setEarningModal({ show: true, mode: 'add', data: null });
+  };
+
+  const openEditEarning = (e) => {
+    setEarningForm({
+      date: e.date || new Date().toISOString().split('T')[0],
+      vehicle_id: e.vehicle_id || '',
+      driver_id: e.driver_id || '',
+      amount_ola: e.amount_ola !== undefined ? e.amount_ola : '',
+      amount_uber: e.amount_uber !== undefined ? e.amount_uber : '',
+      amount_rapido: e.amount_rapido !== undefined ? e.amount_rapido : '',
+      amount_private: e.amount_private !== undefined ? e.amount_private : '',
+      expense: e.expense !== undefined ? e.expense : ''
+    });
+    setEarningModal({ show: true, mode: 'edit', data: e });
+  };
+
+  const openAddExpense = () => {
+    setExpenseForm({
+      date: new Date().toISOString().split('T')[0],
+      vehicle_id: vehicles.length > 0 ? vehicles[0].id : '',
+      category: 'maintenance',
+      amount: '',
+      description: ''
+    });
+    setExpenseModal({ show: true, mode: 'add', data: null });
+  };
+
+  const openEditExpense = (exp) => {
+    setExpenseForm({
+      date: exp.date || new Date().toISOString().split('T')[0],
+      vehicle_id: exp.vehicle_id || '',
+      category: exp.category || 'maintenance',
+      amount: exp.amount !== undefined ? exp.amount : '',
+      description: exp.description || ''
+    });
+    setExpenseModal({ show: true, mode: 'edit', data: exp });
+  };
+
+  const openAdminModal = async () => {
+    const creds = await getAdminCredentials();
+    setAdminCredsForm({
+      mobile: creds.mobile || '8104517652',
+      password: creds.password || '8104517652',
+      confirmPassword: creds.password || '8104517652',
+      name: creds.name || 'AC Fleet Owner'
+    });
+    setAdminModal(true);
+  };
+
+  const handleUpdateAdminCreds = async (e) => {
+    e.preventDefault();
+    if (adminCredsForm.password !== adminCredsForm.confirmPassword) {
+      alert("New Password and Confirm Password do not match!");
+      return;
+    }
+    if ((adminCredsForm.mobile || '').trim().length < 10) {
+      alert("Please enter a valid 10-digit mobile number.");
+      return;
+    }
+    if ((adminCredsForm.password || '').trim().length < 4) {
+      alert("Password should be at least 4 characters long.");
+      return;
+    }
+
+    try {
+      await updateAdminCredentials(
+        adminCredsForm.mobile,
+        adminCredsForm.password,
+        adminCredsForm.name
+      );
+      setAdminModal(false);
+      alert(`Admin login details updated successfully!\n\nMobile: ${adminCredsForm.mobile}\nPassword: ${adminCredsForm.password}`);
+    } catch (err) {
+      alert("Failed updating credentials: " + err.message);
+    }
+  };
+
   // --- CHART RENDERING HELPERS ---
   const renderDashboardCharts = () => {
     if (!stats || !stats.charts) return null;
@@ -553,13 +450,26 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
       ]
     };
 
+    // Category Color Palette
+    const categoryColorsMap = {
+      'Paid to Driver': '#f59e0b',
+      'Fuel / CNG': '#ef4444',
+      'Maintenance & Service': '#3b82f6',
+      'Insurance & Permits': '#8b5cf6',
+      'Tyres & Puncture': '#06b6d4',
+      'Tolls & Parking': '#10b981',
+      'Other Expenses': '#64748b'
+    };
+
+    const validCategoryExpenses = (categoryExpenses || []).filter(c => (parseFloat(c.total) || 0) > 0);
+
     // Doughnut Chart: Expenses by Category
     const doughnutData = {
-      labels: categoryExpenses.map(c => c.category.toUpperCase()),
+      labels: validCategoryExpenses.map(c => c.category),
       datasets: [
         {
-          data: categoryExpenses.map(c => c.total),
-          backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#6366f1', '#ec4899', '#8b5cf6', '#64748b'],
+          data: validCategoryExpenses.map(c => c.total),
+          backgroundColor: validCategoryExpenses.map(c => categoryColorsMap[c.category] || '#6366f1'),
           borderWidth: 0,
         }
       ]
@@ -614,15 +524,39 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
 
         <div className="card chart-card">
           <div className="chart-header">
-            <h3 className="chart-title">Expenses by Category</h3>
+            <h3 className="chart-title">Expenses by Category (This Month)</h3>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Includes Driver Payouts & Vehicle Expenses</span>
           </div>
           <div className="chart-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {categoryExpenses.length > 0 ? (
+            {validCategoryExpenses.length > 0 ? (
               <Doughnut data={doughnutData} options={{ responsive: true, maintainAspectRatio: false }} />
             ) : (
               <p style={{ color: 'var(--text-muted)', textAlign: 'center', marginTop: '100px' }}>No expenses recorded this month.</p>
             )}
           </div>
+          {validCategoryExpenses.length > 0 && (
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '10px',
+              justifyContent: 'center',
+              marginTop: '12px',
+              paddingTop: '10px',
+              borderTop: '1px solid var(--border-color)',
+              fontSize: '11px'
+            }}>
+              {validCategoryExpenses.map(c => (
+                <div key={c.category} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <span style={{
+                    width: '8px', height: '8px', borderRadius: '50%',
+                    backgroundColor: categoryColorsMap[c.category] || '#6366f1'
+                  }} />
+                  <span style={{ color: 'var(--text-secondary)' }}>{c.category}:</span>
+                  <b>₹{c.total.toLocaleString('en-IN')}</b>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="card chart-card" style={{ gridColumn: 'span 2' }}>
@@ -648,9 +582,15 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
     <div className="app-shell">
       {/* Sidebar */}
       <aside className="sidebar">
-        <div className="sidebar-brand">
-          <h2 className="sidebar-title">Atharva Ent.</h2>
-          <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Fleet Admin Portal</span>
+        <div className="sidebar-brand" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '16px 12px' }}>
+          <img
+            src={acLogo}
+            alt="AC Fleet"
+            style={{ maxWidth: '170px', width: '100%', height: 'auto', marginBottom: '6px' }}
+          />
+          <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Fleet Admin Portal
+          </span>
         </div>
         
         <ul className="sidebar-menu">
@@ -658,6 +598,12 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
             <a className={`sidebar-link ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
               <LayoutDashboard size={18} />
               Dashboard
+            </a>
+          </li>
+          <li className="sidebar-item">
+            <a className={`sidebar-link ${activeTab === 'periodic' ? 'active' : ''}`} onClick={() => setActiveTab('periodic')}>
+              <CalendarDays size={18} />
+              Day / Week / Month
             </a>
           </li>
           <li className="sidebar-item">
@@ -678,13 +624,13 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
               Daily Earnings Log
             </a>
           </li>
-
           <li className="sidebar-item">
-            <a className={`sidebar-link ${activeTab === 'settlements' ? 'active' : ''}`} onClick={() => setActiveTab('settlements')}>
-              <Check size={18} />
-              Driver Settlements
+            <a className={`sidebar-link ${activeTab === 'expenses' ? 'active' : ''}`} onClick={() => setActiveTab('expenses')}>
+              <Receipt size={18} />
+              Vehicle Expenses
             </a>
           </li>
+
           <li className="sidebar-item">
             <a className={`sidebar-link ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => setActiveTab('reports')}>
               <FileText size={18} />
@@ -712,6 +658,9 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
             <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--success)' }}></div>
             <span>Logged as <b>Owner</b></span>
           </div>
+          <button className="btn btn-secondary btn-block" onClick={openAdminModal}>
+            <Key size={16} /> Admin Login Details
+          </button>
           <button className="btn btn-secondary btn-block" onClick={toggleTheme}>
             {darkMode ? <Sun size={16} /> : <Moon size={16} />}
             {darkMode ? 'Light Theme' : 'Dark Theme'}
@@ -730,21 +679,26 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
           <div className="nav-title">
             <h1>
               {activeTab === 'dashboard' && 'Dashboard Overview'}
+              {activeTab === 'periodic' && 'Day / Week / Month Analytics'}
               {activeTab === 'vehicles' && 'Manage Vehicles'}
               {activeTab === 'drivers' && 'Manage Drivers'}
               {activeTab === 'earnings' && 'Earnings Registry'}
-              {activeTab === 'expenses' && 'Expenses Management'}
-              {activeTab === 'settlements' && 'Driver Settlement Auditing'}
+              {activeTab === 'expenses' && 'Vehicle Expenses Management'}
               {activeTab === 'reports' && 'Financial Reports & Analytics'}
               {activeTab === 'alerts' && 'System alerts & Expiries'}
             </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Atharva Enterprises Taxi Business Console</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>AC Fleet - Fleet • Rental • Mobility</p>
           </div>
           
           <div className="nav-actions">
             {activeTab === 'dashboard' && (
               <span style={{ fontSize: '13px', backgroundColor: 'var(--bg-tertiary)', padding: '6px 12px', borderRadius: '20px' }}>
                 Today: <b>{new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</b>
+              </span>
+            )}
+            {activeTab === 'periodic' && (
+              <span style={{ fontSize: '13px', backgroundColor: 'var(--bg-tertiary)', padding: '6px 14px', borderRadius: '20px' }}>
+                View: <b style={{ color: 'var(--primary)', textTransform: 'uppercase' }}>{periodType}</b>
               </span>
             )}
             {activeTab === 'vehicles' && (
@@ -758,13 +712,13 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
               </button>
             )}
             {activeTab === 'earnings' && (
-              <button className="btn btn-primary" onClick={() => setEarningModal({ show: true })}>
+              <button className="btn btn-primary" onClick={openAddEarning}>
                 <Plus size={16} /> Log Daily Earnings
               </button>
             )}
             {activeTab === 'expenses' && (
-              <button className="btn btn-primary" onClick={() => setExpenseModal({ show: true })}>
-                <Plus size={16} /> Log Expense
+              <button className="btn btn-primary" onClick={openAddExpense}>
+                <Plus size={16} /> Log Vehicle Expense
               </button>
             )}
           </div>
@@ -793,29 +747,41 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                 {/* KPI Row */}
                 <section className="kpi-grid">
                   <div className="card kpi-card">
-                    <span className="kpi-label">Today's Earnings</span>
+                    <span className="kpi-label">Today's Gross Earnings</span>
                     <span className="kpi-value earnings">₹{stats.kpis.earningsToday.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="card kpi-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+                    <span className="kpi-label">Today Paid to Drivers</span>
+                    <span className="kpi-value" style={{ color: '#f59e0b' }}>
+                      ₹{(stats.kpis.driverPayoutToday || 0).toLocaleString('en-IN')}
+                    </span>
                   </div>
                   <div className="card kpi-card">
                     <span className="kpi-label">Today's Expenses</span>
                     <span className="kpi-value expenses">₹{stats.kpis.expensesToday.toLocaleString('en-IN')}</span>
                   </div>
                   <div className="card kpi-card">
-                    <span className="kpi-label">Today's Profit</span>
+                    <span className="kpi-label">Today's Net Profit</span>
                     <span className={`kpi-value profit ${stats.kpis.netProfitToday < 0 ? 'expenses' : ''}`}>
                       ₹{stats.kpis.netProfitToday.toLocaleString('en-IN')}
                     </span>
                   </div>
                   <div className="card kpi-card">
-                    <span className="kpi-label">Month's Earnings</span>
+                    <span className="kpi-label">Month's Gross Earnings</span>
                     <span className="kpi-value earnings">₹{stats.kpis.earningsMonth.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="card kpi-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+                    <span className="kpi-label">Total Paid to Drivers (Month)</span>
+                    <span className="kpi-value" style={{ color: '#f59e0b' }}>
+                      ₹{(stats.kpis.driverPayoutMonth || 0).toLocaleString('en-IN')}
+                    </span>
                   </div>
                   <div className="card kpi-card">
                     <span className="kpi-label">Month's Expenses</span>
                     <span className="kpi-value expenses">₹{stats.kpis.expensesMonth.toLocaleString('en-IN')}</span>
                   </div>
                   <div className="card kpi-card">
-                    <span className="kpi-label">Month's Profit</span>
+                    <span className="kpi-label">Month's Net Profit</span>
                     <span className={`kpi-value profit ${stats.kpis.netProfitMonth < 0 ? 'expenses' : ''}`}>
                       ₹{stats.kpis.netProfitMonth.toLocaleString('en-IN')}
                     </span>
@@ -834,6 +800,560 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                 {renderDashboardCharts()}
               </>
             )}
+
+            {/* 1.5. PERIODIC ANALYTICS (DAY, WEEK, MONTH, CUSTOM) */}
+            {activeTab === 'periodic' && (() => {
+              // Helper to compute range
+              const getActiveRange = () => {
+                if (periodType === 'day') {
+                  const dObj = new Date(selectedDay + 'T00:00:00');
+                  const label = isNaN(dObj.getTime())
+                    ? selectedDay
+                    : dObj.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+                  return { start: selectedDay, end: selectedDay, label };
+                }
+                if (periodType === 'week') {
+                  const now = new Date();
+                  now.setDate(now.getDate() + (weekOffset * 7));
+                  const day = now.getDay();
+                  const diffToMon = now.getDate() - day + (day === 0 ? -6 : 1);
+                  const monday = new Date(now.setDate(diffToMon));
+                  const sunday = new Date(new Date(monday).setDate(monday.getDate() + 6));
+                  const start = monday.toISOString().split('T')[0];
+                  const end = sunday.toISOString().split('T')[0];
+                  const label = `${monday.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${sunday.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+                  return { start, end, label };
+                }
+                if (periodType === 'month') {
+                  const now = new Date();
+                  now.setMonth(now.getMonth() + monthOffset);
+                  const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+                  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+                  const label = now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+                  return { start, end, label };
+                }
+                return {
+                  start: customRange.start,
+                  end: customRange.end,
+                  label: `${customRange.start} to ${customRange.end}`
+                };
+              };
+
+              const activeRange = getActiveRange();
+
+              // Filter earnings for this range
+              const filteredEarnings = earnings.filter(e => {
+                if (!e.date) return false;
+                return e.date >= activeRange.start && e.date <= activeRange.end;
+              });
+
+              // Filter vehicle expenses for this range
+              const filteredExpenses = expenses.filter(x => {
+                if (!x.date) return false;
+                return x.date >= activeRange.start && x.date <= activeRange.end;
+              });
+
+              let totalGross = 0;
+              let totalDriverPayout = 0;
+              let totalDailyRunExp = 0;
+              let olaTotal = 0;
+              let uberTotal = 0;
+              let rapidoTotal = 0;
+              let privateTotal = 0;
+
+              const vehicleMap = {};
+              vehicles.forEach(v => {
+                vehicleMap[v.id] = {
+                  id: v.id,
+                  number: v.vehicle_number,
+                  model: v.model_name,
+                  logsCount: 0,
+                  gross: 0,
+                  driverPay: 0,
+                  expenses: 0,
+                  netProfit: 0
+                };
+              });
+
+              const driverMap = {};
+              drivers.forEach(d => {
+                const key = d.id || d.driver_id;
+                driverMap[key] = {
+                  id: key,
+                  name: d.name,
+                  mobile: d.mobile,
+                  sharePct: d.share_percentage || 50,
+                  logsCount: 0,
+                  gross: 0,
+                  payout: 0,
+                  companyShare: 0
+                };
+              });
+
+              filteredEarnings.forEach(e => {
+                const gross = parseFloat(e.total_amount) || 0;
+                const exp = parseFloat(e.expense) || 0;
+                const netAfterExp = Math.max(0, gross - exp);
+                const driverPay = e.driver_share_amount !== undefined
+                  ? parseFloat(e.driver_share_amount)
+                  : (netAfterExp * (parseFloat(e.driver_share_percentage) || 50) / 100);
+                const netProfit = (gross - exp) - driverPay;
+
+                totalGross += gross;
+                totalDriverPayout += driverPay;
+                totalDailyRunExp += exp;
+
+                olaTotal += parseFloat(e.amount_ola) || 0;
+                uberTotal += parseFloat(e.amount_uber) || 0;
+                rapidoTotal += parseFloat(e.amount_rapido) || 0;
+                privateTotal += parseFloat(e.amount_private) || 0;
+
+                if (e.vehicle_id && vehicleMap[e.vehicle_id]) {
+                  vehicleMap[e.vehicle_id].logsCount += 1;
+                  vehicleMap[e.vehicle_id].gross += gross;
+                  vehicleMap[e.vehicle_id].driverPay += driverPay;
+                  vehicleMap[e.vehicle_id].expenses += exp;
+                  vehicleMap[e.vehicle_id].netProfit += netProfit;
+                }
+
+                const dKey = e.driver_id;
+                if (dKey && driverMap[dKey]) {
+                  driverMap[dKey].logsCount += 1;
+                  driverMap[dKey].gross += gross;
+                  driverMap[dKey].payout += driverPay;
+                  driverMap[dKey].companyShare += netProfit;
+                }
+              });
+
+              let totalVehicleModuleExp = 0;
+              filteredExpenses.forEach(exp => {
+                const amt = parseFloat(exp.amount) || 0;
+                totalVehicleModuleExp += amt;
+                if (exp.vehicle_id && vehicleMap[exp.vehicle_id]) {
+                  vehicleMap[exp.vehicle_id].expenses += amt;
+                  vehicleMap[exp.vehicle_id].netProfit -= amt;
+                }
+              });
+
+              const totalExpensesAll = totalDailyRunExp + totalVehicleModuleExp;
+              const netCompanyProfit = totalGross - totalExpensesAll - totalDriverPayout;
+
+              const shiftDay = (days) => {
+                const d = new Date(selectedDay + 'T00:00:00');
+                d.setDate(d.getDate() + days);
+                setSelectedDay(d.toISOString().split('T')[0]);
+              };
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+                  {/* Time Range Filter Bar */}
+                  <div className="card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', gap: '8px', backgroundColor: 'var(--bg-tertiary)', padding: '4px', borderRadius: '12px' }}>
+                        <button
+                          type="button"
+                          className={`btn ${periodType === 'day' ? 'btn-primary' : 'btn-secondary'}`}
+                          style={{ padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}
+                          onClick={() => setPeriodType('day')}
+                        >
+                          📅 Day View
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn ${periodType === 'week' ? 'btn-primary' : 'btn-secondary'}`}
+                          style={{ padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}
+                          onClick={() => setPeriodType('week')}
+                        >
+                          📆 Week View
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn ${periodType === 'month' ? 'btn-primary' : 'btn-secondary'}`}
+                          style={{ padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}
+                          onClick={() => setPeriodType('month')}
+                        >
+                          🗓️ Month View
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn ${periodType === 'custom' ? 'btn-primary' : 'btn-secondary'}`}
+                          style={{ padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' }}
+                          onClick={() => setPeriodType('custom')}
+                        >
+                          🔍 Custom Range
+                        </button>
+                      </div>
+
+                      <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                        Viewing: <span style={{ color: 'var(--primary)' }}>{activeRange.label}</span>
+                      </div>
+                    </div>
+
+                    {/* Mode Navigation Controls */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid var(--border-color)' }}>
+                      {periodType === 'day' && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+                          <button className="btn btn-secondary" style={{ padding: '6px 12px' }} onClick={() => shiftDay(-1)}>
+                            <ChevronLeft size={16} /> Prev Day
+                          </button>
+                          <input
+                            type="date"
+                            className="form-input"
+                            style={{ width: 'auto' }}
+                            value={selectedDay}
+                            onChange={(e) => setSelectedDay(e.target.value)}
+                          />
+                          <button className="btn btn-secondary" style={{ padding: '6px 12px' }} onClick={() => shiftDay(1)}>
+                            Next Day <ChevronRight size={16} />
+                          </button>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ padding: '6px 14px' }}
+                            onClick={() => setSelectedDay(new Date().toISOString().split('T')[0])}
+                          >
+                            Today
+                          </button>
+                        </div>
+                      )}
+
+                      {periodType === 'week' && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+                          <button className="btn btn-secondary" style={{ padding: '6px 12px' }} onClick={() => setWeekOffset(w => w - 1)}>
+                            <ChevronLeft size={16} /> Prev Week
+                          </button>
+                          <button
+                            className={`btn ${weekOffset === 0 ? 'btn-primary' : 'btn-secondary'}`}
+                            style={{ padding: '6px 14px' }}
+                            onClick={() => setWeekOffset(0)}
+                          >
+                            This Week
+                          </button>
+                          <button className="btn btn-secondary" style={{ padding: '6px 12px' }} onClick={() => setWeekOffset(w => w + 1)}>
+                            Next Week <ChevronRight size={16} />
+                          </button>
+                        </div>
+                      )}
+
+                      {periodType === 'month' && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+                          <button className="btn btn-secondary" style={{ padding: '6px 12px' }} onClick={() => setMonthOffset(m => m - 1)}>
+                            <ChevronLeft size={16} /> Prev Month
+                          </button>
+                          <button
+                            className={`btn ${monthOffset === 0 ? 'btn-primary' : 'btn-secondary'}`}
+                            style={{ padding: '6px 14px' }}
+                            onClick={() => setMonthOffset(0)}
+                          >
+                            This Month
+                          </button>
+                          <button className="btn btn-secondary" style={{ padding: '6px 12px' }} onClick={() => setMonthOffset(m => m + 1)}>
+                            Next Month <ChevronRight size={16} />
+                          </button>
+                        </div>
+                      )}
+
+                      {periodType === 'custom' && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)' }}>From:</span>
+                            <input
+                              type="date"
+                              className="form-input"
+                              style={{ width: 'auto' }}
+                              value={customRange.start}
+                              onChange={(e) => setCustomRange({ ...customRange, start: e.target.value })}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)' }}>To:</span>
+                            <input
+                              type="date"
+                              className="form-input"
+                              style={{ width: 'auto' }}
+                              value={customRange.end}
+                              onChange={(e) => setCustomRange({ ...customRange, end: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Financial KPI Summary Cards */}
+                  <section className="kpi-grid">
+                    <div className="card kpi-card">
+                      <span className="kpi-label">Gross Revenue</span>
+                      <span className="kpi-value earnings">₹{Math.round(totalGross).toLocaleString('en-IN')}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        {filteredEarnings.length} vehicle trips/runs
+                      </span>
+                    </div>
+
+                    <div className="card kpi-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+                      <span className="kpi-label">Total Paid to Drivers</span>
+                      <span className="kpi-value" style={{ color: '#f59e0b' }}>
+                        ₹{Math.round(totalDriverPayout).toLocaleString('en-IN')}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        {totalGross > 0 ? `${Math.round((totalDriverPayout / totalGross) * 100)}% of collection` : '0% of collection'}
+                      </span>
+                    </div>
+
+                    <div className="card kpi-card">
+                      <span className="kpi-label">Direct Vehicle Expenses</span>
+                      <span className="kpi-value expenses">₹{Math.round(totalExpensesAll).toLocaleString('en-IN')}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        Fuel: ₹{Math.round(totalDailyRunExp)} | Overheads: ₹{Math.round(totalVehicleModuleExp)}
+                      </span>
+                    </div>
+
+                    <div className="card kpi-card" style={{ borderLeft: `4px solid ${netCompanyProfit >= 0 ? 'var(--success)' : 'var(--danger)'}` }}>
+                      <span className="kpi-label">Net Company Profit</span>
+                      <span className={`kpi-value ${netCompanyProfit >= 0 ? 'profit' : 'expenses'}`}>
+                        ₹{Math.round(netCompanyProfit).toLocaleString('en-IN')}
+                      </span>
+                      <span style={{ fontSize: '11px', color: netCompanyProfit >= 0 ? 'var(--success)' : 'var(--danger)', marginTop: '4px', fontWeight: 'bold' }}>
+                        {totalGross > 0 ? `${Math.round((netCompanyProfit / totalGross) * 100)}% Net Margin` : '0% Margin'}
+                      </span>
+                    </div>
+                  </section>
+
+                  {/* Platform Aggregator Splits */}
+                  <div className="card">
+                    <h3 style={{ marginBottom: '14px', fontSize: '15px' }}>Platform Aggregator Splits ({activeRange.label})</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                      <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'var(--bg-tertiary)', textAlign: 'center' }}>
+                        <span className="badge badge-ola" style={{ marginBottom: '6px' }}>Ola</span>
+                        <h3 style={{ margin: '4px 0', fontSize: '20px' }}>₹{Math.round(olaTotal).toLocaleString('en-IN')}</h3>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          {totalGross > 0 ? `${Math.round((olaTotal / totalGross) * 100)}%` : '0%'}
+                        </span>
+                      </div>
+                      <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'var(--bg-tertiary)', textAlign: 'center' }}>
+                        <span className="badge badge-uber" style={{ marginBottom: '6px' }}>Uber</span>
+                        <h3 style={{ margin: '4px 0', fontSize: '20px' }}>₹{Math.round(uberTotal).toLocaleString('en-IN')}</h3>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          {totalGross > 0 ? `${Math.round((uberTotal / totalGross) * 100)}%` : '0%'}
+                        </span>
+                      </div>
+                      <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'var(--bg-tertiary)', textAlign: 'center' }}>
+                        <span className="badge badge-rapido" style={{ marginBottom: '6px' }}>Rapido</span>
+                        <h3 style={{ margin: '4px 0', fontSize: '20px' }}>₹{Math.round(rapidoTotal).toLocaleString('en-IN')}</h3>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          {totalGross > 0 ? `${Math.round((rapidoTotal / totalGross) * 100)}%` : '0%'}
+                        </span>
+                      </div>
+                      <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'var(--bg-tertiary)', textAlign: 'center' }}>
+                        <span className="badge badge-private" style={{ marginBottom: '6px' }}>Private Trips</span>
+                        <h3 style={{ margin: '4px 0', fontSize: '20px' }}>₹{Math.round(privateTotal).toLocaleString('en-IN')}</h3>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          {totalGross > 0 ? `${Math.round((privateTotal / totalGross) * 100)}%` : '0%'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Vehicle Wise Performance Table */}
+                  <div className="card">
+                    <h3 style={{ marginBottom: '14px', fontSize: '15px' }}>Vehicle Wise Contributions</h3>
+                    <div className="table-responsive">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Vehicle Number</th>
+                            <th>Model</th>
+                            <th>Active Days</th>
+                            <th>Gross Collection</th>
+                            <th>Driver Payout</th>
+                            <th>Expenses</th>
+                            <th>Net Company Profit</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.values(vehicleMap).map(v => (
+                            <tr key={v.id}>
+                              <td><b>{v.number}</b></td>
+                              <td>{v.model}</td>
+                              <td>{v.logsCount} day{v.logsCount === 1 ? '' : 's'}</td>
+                              <td><b>₹{Math.round(v.gross).toLocaleString('en-IN')}</b></td>
+                              <td style={{ color: '#f59e0b' }}>- ₹{Math.round(v.driverPay).toLocaleString('en-IN')}</td>
+                              <td style={{ color: 'var(--danger)' }}>₹{Math.round(v.expenses).toLocaleString('en-IN')}</td>
+                              <td style={{ color: v.netProfit >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 'bold' }}>
+                                ₹{Math.round(v.netProfit).toLocaleString('en-IN')}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Driver Wise Performance Table */}
+                  <div className="card">
+                    <h3 style={{ marginBottom: '14px', fontSize: '15px' }}>Driver Wise Earnings & Payouts</h3>
+                    <div className="table-responsive">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Driver Name</th>
+                            <th>Mobile</th>
+                            <th>Share %</th>
+                            <th>Days Worked</th>
+                            <th>Total Collection</th>
+                            <th>Driver Payment</th>
+                            <th>Company Share</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.values(driverMap).map(d => (
+                            <tr key={d.id}>
+                              <td><b>{d.name}</b></td>
+                              <td>{d.mobile}</td>
+                              <td>{d.sharePct}%</td>
+                              <td>{d.logsCount} day{d.logsCount === 1 ? '' : 's'}</td>
+                              <td>₹{Math.round(d.gross).toLocaleString('en-IN')}</td>
+                              <td style={{ color: '#f59e0b', fontWeight: 'bold' }}>
+                                ₹{Math.round(d.payout).toLocaleString('en-IN')}
+                              </td>
+                              <td style={{ color: d.companyShare >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 'bold' }}>
+                                ₹{Math.round(d.companyShare).toLocaleString('en-IN')}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Itemized Daily Logs for Period */}
+                  <div className="card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                      <h3 style={{ margin: 0, fontSize: '15px' }}>Daily Vehicle Logs in this Period ({filteredEarnings.length})</h3>
+                      <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={openAddEarning}>
+                        <Plus size={14} /> Log Earning
+                      </button>
+                    </div>
+                    <div className="table-responsive">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Date</th>
+                            <th>Vehicle Number</th>
+                            <th>Driver Name</th>
+                            <th>Ola</th>
+                            <th>Uber</th>
+                            <th>Rapido</th>
+                            <th>Private</th>
+                            <th>Gross</th>
+                            <th>Driver Payment</th>
+                            <th>Expense</th>
+                            <th>Daily Profit</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredEarnings.map((e) => {
+                            const gross = parseFloat(e.total_amount) || 0;
+                            const exp = parseFloat(e.expense) || 0;
+                            const netAfterExp = Math.max(0, gross - exp);
+                            const driverPay = e.driver_share_amount !== undefined
+                              ? parseFloat(e.driver_share_amount)
+                              : (netAfterExp * (parseFloat(e.driver_share_percentage) || 50) / 100);
+                            const netProfit = e.net_profit !== undefined ? parseFloat(e.net_profit) : ((gross - exp) - driverPay);
+
+                            return (
+                              <tr key={e.id}>
+                                <td>{e.date}</td>
+                                <td><b>{e.vehicle_number}</b></td>
+                                <td>{e.driver_name}</td>
+                                <td>₹{e.amount_ola}</td>
+                                <td>₹{e.amount_uber}</td>
+                                <td>₹{e.amount_rapido}</td>
+                                <td>₹{e.amount_private}</td>
+                                <td><b>₹{gross.toLocaleString('en-IN')}</b></td>
+                                <td style={{ color: '#f59e0b', fontWeight: 'bold' }}>
+                                  - ₹{Math.round(driverPay).toLocaleString('en-IN')}
+                                </td>
+                                <td style={{ color: 'var(--danger)' }}>₹{exp.toLocaleString('en-IN')}</td>
+                                <td style={{ color: netProfit >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 'bold' }}>
+                                  ₹{Math.round(netProfit).toLocaleString('en-IN')}
+                                </td>
+                                <td>
+                                  <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button className="btn btn-secondary" style={{ padding: '6px' }} title="Edit daily entry" onClick={() => openEditEarning(e)}>
+                                      <Edit2 size={14} />
+                                    </button>
+                                    <button className="btn btn-danger" style={{ padding: '6px' }} title="Delete entry" onClick={() => deleteEarning(e.id)}>
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {filteredEarnings.length === 0 && (
+                            <tr>
+                              <td colSpan="12" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '30px' }}>
+                                No daily vehicle earnings recorded for this {periodType}.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Itemized Vehicle Expenses for Period */}
+                  {filteredExpenses.length > 0 && (
+                    <div className="card">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                        <h3 style={{ margin: 0, fontSize: '15px' }}>Vehicle Direct Expenses in this Period ({filteredExpenses.length})</h3>
+                        <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={openAddExpense}>
+                          <Plus size={14} /> Log Expense
+                        </button>
+                      </div>
+                      <div className="table-responsive">
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                              <th>Date</th>
+                              <th>Vehicle</th>
+                              <th>Category</th>
+                              <th>Description</th>
+                              <th>Amount</th>
+                              <th>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredExpenses.map((exp) => (
+                              <tr key={exp.id}>
+                                <td>{exp.date}</td>
+                                <td><b>{exp.vehicle_number}</b></td>
+                                <td><span className="badge badge-info">{exp.category}</span></td>
+                                <td style={{ color: 'var(--text-secondary)' }}>{exp.description || '-'}</td>
+                                <td style={{ color: 'var(--danger)', fontWeight: 'bold' }}>
+                                  ₹{(parseFloat(exp.amount) || 0).toLocaleString('en-IN')}
+                                </td>
+                                <td>
+                                  <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button className="btn btn-secondary" style={{ padding: '6px' }} onClick={() => openEditExpense(exp)}>
+                                      <Edit2 size={14} />
+                                    </button>
+                                    <button className="btn btn-danger" style={{ padding: '6px' }} onClick={() => deleteExpense(exp.id)}>
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* 2. VEHICLE MANAGEMENT */}
             {activeTab === 'vehicles' && (
@@ -967,37 +1487,56 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                         <th>Uber</th>
                         <th>Rapido</th>
                         <th>Private Trips</th>
-                        <th>Total Earnings</th>
+                        <th>Gross Total</th>
+                        <th>Driver Payment</th>
                         <th>Expense</th>
-                        <th>Daily Profit</th>
+                        <th>Daily Company Profit</th>
                         <th>Action</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {earnings.map((e) => (
-                        <tr key={e.id}>
-                          <td>{e.date}</td>
-                          <td><b>{e.vehicle_number}</b></td>
-                          <td>{e.driver_name}</td>
-                          <td>₹{e.amount_ola}</td>
-                          <td>₹{e.amount_uber}</td>
-                          <td>₹{e.amount_rapido}</td>
-                          <td>₹{e.amount_private}</td>
-                          <td><b>₹{e.total_amount}</b></td>
-                          <td style={{ color: 'var(--danger)' }}>₹{e.expense}</td>
-                          <td style={{ color: e.total_amount - e.expense >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 'bold' }}>
-                            ₹{(e.total_amount - e.expense).toLocaleString('en-IN')}
-                          </td>
-                          <td>
-                            <button className="btn btn-danger" style={{ padding: '6px' }} onClick={() => deleteEarning(e.id)}>
-                              <Trash2 size={14} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {earnings.map((e) => {
+                        const gross = parseFloat(e.total_amount) || 0;
+                        const exp = parseFloat(e.expense) || 0;
+                        const netAfterExp = Math.max(0, gross - exp);
+                        const driverPay = e.driver_share_amount !== undefined 
+                          ? parseFloat(e.driver_share_amount) 
+                          : (netAfterExp * (parseFloat(e.driver_share_percentage) || 50) / 100);
+                        const netProfit = e.net_profit !== undefined ? parseFloat(e.net_profit) : ((gross - exp) - driverPay);
+
+                        return (
+                          <tr key={e.id}>
+                            <td>{e.date}</td>
+                            <td><b>{e.vehicle_number}</b></td>
+                            <td>{e.driver_name}</td>
+                            <td>₹{e.amount_ola}</td>
+                            <td>₹{e.amount_uber}</td>
+                            <td>₹{e.amount_rapido}</td>
+                            <td>₹{e.amount_private}</td>
+                            <td><b>₹{gross.toLocaleString('en-IN')}</b></td>
+                            <td style={{ color: '#f59e0b', fontWeight: 'bold' }}>
+                              - ₹{Math.round(driverPay).toLocaleString('en-IN')}
+                            </td>
+                            <td style={{ color: 'var(--danger)' }}>₹{exp.toLocaleString('en-IN')}</td>
+                            <td style={{ color: netProfit >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 'bold' }}>
+                              ₹{Math.round(netProfit).toLocaleString('en-IN')}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button className="btn btn-secondary" style={{ padding: '6px' }} title="Edit daily entry" onClick={() => openEditEarning(e)}>
+                                  <Edit2 size={14} />
+                                </button>
+                                <button className="btn btn-danger" style={{ padding: '6px' }} title="Delete entry" onClick={() => deleteEarning(e.id)}>
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                       {earnings.length === 0 && (
                         <tr>
-                          <td colSpan="11" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '30px' }}>No daily earnings entries recorded.</td>
+                          <td colSpan="12" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '30px' }}>No daily earnings entries recorded.</td>
                         </tr>
                       )}
                     </tbody>
@@ -1006,92 +1545,160 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
               </section>
             )}
 
+            {/* 5. VEHICLE EXPENSES MANAGEMENT */}
+            {activeTab === 'expenses' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* Summary KPI Cards for Expenses */}
+                {(() => {
+                  const totalExp = expenses.reduce((sum, x) => sum + (parseFloat(x.amount) || 0), 0);
+                  const fuelExp = expenses.filter(x => (x.category || '').toLowerCase() === 'fuel' || (x.category || '').toLowerCase() === 'cng')
+                                          .reduce((sum, x) => sum + (parseFloat(x.amount) || 0), 0);
+                  const maintExp = expenses.filter(x => (x.category || '').toLowerCase() === 'maintenance' || (x.category || '').toLowerCase() === 'service')
+                                           .reduce((sum, x) => sum + (parseFloat(x.amount) || 0), 0);
+                  const otherExp = totalExp - fuelExp - maintExp;
 
+                  return (
+                    <section className="kpi-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+                      <div className="card kpi-card" style={{ borderLeft: '4px solid var(--danger)' }}>
+                        <span className="kpi-label">Total Vehicle Expenses</span>
+                        <span className="kpi-value expenses">₹{Math.round(totalExp).toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="card kpi-card" style={{ borderLeft: '4px solid #ef4444' }}>
+                        <span className="kpi-label">Fuel & CNG Outflow</span>
+                        <span className="kpi-value" style={{ color: '#ef4444' }}>₹{Math.round(fuelExp).toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="card kpi-card" style={{ borderLeft: '4px solid #3b82f6' }}>
+                        <span className="kpi-label">Maintenance & Servicing</span>
+                        <span className="kpi-value" style={{ color: '#3b82f6' }}>₹{Math.round(maintExp).toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="card kpi-card" style={{ borderLeft: '4px solid #8b5cf6' }}>
+                        <span className="kpi-label">Insurance, Tyres & Overheads</span>
+                        <span className="kpi-value" style={{ color: '#8b5cf6' }}>₹{Math.round(otherExp).toLocaleString('en-IN')}</span>
+                      </div>
+                    </section>
+                  );
+                })()}
 
-            {/* 6. DRIVER SETTLEMENTS */}
-            {activeTab === 'settlements' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
-                
-                {/* Generate New Settlement form */}
-                <section className="card">
-                  <h3 style={{ marginBottom: '15px' }}>Calculate & Generate Settlement</h3>
-                  <form onSubmit={calculateSettlement} className="grid-3" style={{ alignItems: 'flex-end', gridTemplateColumns: '2fr 2fr 1fr' }}>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label className="form-label">Select Driver</label>
-                      <select className="form-input" value={settleForm.driver_id} onChange={(e) => setSettleForm({ ...settleForm, driver_id: e.target.value })} required>
-                        <option value="">-- Select Driver --</option>
-                        {drivers.map(d => (
-                          <option key={d.driver_id} value={d.driver_id}>{d.name} ({d.share_percentage}% share)</option>
+                {/* Filters and Actions */}
+                <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <div>
+                      <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--text-secondary)', marginRight: '8px' }}>Vehicle:</label>
+                      <select
+                        className="form-input"
+                        style={{ width: 'auto', display: 'inline-block' }}
+                        value={expenseVehicleFilter}
+                        onChange={(e) => setExpenseVehicleFilter(e.target.value)}
+                      >
+                        <option value="">-- All Vehicles --</option>
+                        {vehicles.map(v => (
+                          <option key={v.id} value={v.id}>{v.vehicle_number} ({v.model_name})</option>
                         ))}
                       </select>
                     </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label className="form-label">Settlement Date</label>
-                      <input type="date" className="form-input" value={settleForm.date} onChange={(e) => setSettleForm({ ...settleForm, date: e.target.value })} required />
-                    </div>
-                    <button type="submit" className="btn btn-primary" style={{ height: '45px', width: '100%' }}>
-                      Calculate Splits
-                    </button>
-                  </form>
-                </section>
 
-                {/* Settlements Ledger List */}
+                    <div>
+                      <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--text-secondary)', marginRight: '8px' }}>Category:</label>
+                      <select
+                        className="form-input"
+                        style={{ width: 'auto', display: 'inline-block' }}
+                        value={expenseCategoryFilter}
+                        onChange={(e) => setExpenseCategoryFilter(e.target.value)}
+                      >
+                        <option value="">-- All Categories --</option>
+                        <option value="fuel">Fuel / CNG</option>
+                        <option value="maintenance">Maintenance & Service</option>
+                        <option value="tyres">Tyres Replacement</option>
+                        <option value="puncture">Puncture / Repair</option>
+                        <option value="insurance">Insurance Renewal</option>
+                        <option value="permit">Permit Renewal</option>
+                        <option value="toll">Tolls</option>
+                        <option value="parking">Parking</option>
+                        <option value="other">Other Expenses</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <button className="btn btn-primary" onClick={openAddExpense}>
+                    <Plus size={16} /> Log Vehicle Expense
+                  </button>
+                </div>
+
+                {/* Expenses Table */}
                 <section className="card">
-                  <h3 style={{ marginBottom: '15px' }}>Settlements Ledger</h3>
                   <div className="table-responsive">
                     <table className="data-table">
                       <thead>
                         <tr>
                           <th>Date</th>
-                          <th>Driver Name</th>
-                          <th>Total Earnings ₹</th>
-                          <th>Fuel ₹</th>
-                          <th>Other Expenses ₹</th>
-                          <th>Amount After Expenses ₹</th>
-                          <th>Driver %</th>
-                          <th>Driver Share ₹</th>
-                          <th>My Share ₹</th>
-                          <th>Paid to driver ₹</th>
-                          <th>owner ₹</th>
-                          <th>paid to</th>
-                          <th>status</th>
-                          <th className="no-print">Action</th>
+                          <th>Vehicle Number</th>
+                          <th>Vehicle Model</th>
+                          <th>Category</th>
+                          <th>Description / Notes</th>
+                          <th>Amount</th>
+                          <th>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {settlements.map((s) => (
-                          <tr key={s.id}>
-                            <td>{s.date.split('-').reverse().join('/')}</td>
-                            <td><b>{s.driver_name}</b></td>
-                            <td>₹{s.total_earnings.toLocaleString('en-IN')}</td>
-                            <td>₹{s.fuel_expenses.toLocaleString('en-IN')}</td>
-                            <td>₹{s.other_expenses.toLocaleString('en-IN')}</td>
-                            <td>₹{s.amount_after_expenses.toLocaleString('en-IN')}</td>
-                            <td>{s.driver_percentage}%</td>
-                            <td>₹{s.driver_share.toLocaleString('en-IN')}</td>
-                            <td>₹{s.owner_share.toLocaleString('en-IN')}</td>
-                            <td><span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>₹{s.paid_to_driver.toLocaleString('en-IN')}</span></td>
-                            <td><span style={{ color: 'var(--success)', fontWeight: 'bold' }}>₹{s.owner_net.toLocaleString('en-IN')}</span></td>
-                            <td>{s.paid_to ? <code>{s.paid_to}</code> : <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
-                            <td>
-                              <span className={`badge ${s.status === 'paid' ? 'badge-success' : 'badge-warning'}`}>
-                                {s.status}
-                              </span>
-                            </td>
-                            <td className="no-print">
-                              {s.status === 'pending' ? (
-                                <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '11px', backgroundColor: 'var(--success)' }} onClick={() => setPaySettlementForm({ id: s.id, paid_to: '' })}>
-                                  Mark Paid
-                                </button>
-                              ) : (
-                                <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Settled</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                        {settlements.length === 0 && (
+                        {expenses
+                          .filter(x => {
+                            if (expenseVehicleFilter && x.vehicle_id !== expenseVehicleFilter) return false;
+                            if (expenseCategoryFilter && (x.category || '').toLowerCase() !== expenseCategoryFilter.toLowerCase()) return false;
+                            return true;
+                          })
+                          .map((exp) => {
+                            const getCategoryBadge = (cat) => {
+                              const c = (cat || '').toLowerCase();
+                              if (c === 'fuel' || c === 'cng') return { label: 'Fuel / CNG', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' };
+                              if (c === 'maintenance' || c === 'service') return { label: 'Maintenance', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.1)' };
+                              if (c === 'insurance' || c === 'permit') return { label: 'Insurance / Permit', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)' };
+                              if (c === 'tyres' || c === 'puncture') return { label: 'Tyres / Puncture', color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.1)' };
+                              if (c === 'toll' || c === 'parking') return { label: 'Toll / Parking', color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' };
+                              return { label: cat || 'Other', color: '#64748b', bg: 'rgba(100, 116, 139, 0.1)' };
+                            };
+
+                            const badge = getCategoryBadge(exp.category);
+
+                            return (
+                              <tr key={exp.id}>
+                                <td>{exp.date}</td>
+                                <td><b>{exp.vehicle_number}</b></td>
+                                <td>{exp.model_name || '-'}</td>
+                                <td>
+                                  <span style={{
+                                    display: 'inline-block',
+                                    padding: '3px 8px',
+                                    borderRadius: '12px',
+                                    fontSize: '11px',
+                                    fontWeight: '600',
+                                    color: badge.color,
+                                    backgroundColor: badge.bg
+                                  }}>
+                                    {badge.label}
+                                  </span>
+                                </td>
+                                <td style={{ color: 'var(--text-secondary)' }}>{exp.description || '-'}</td>
+                                <td style={{ color: 'var(--danger)', fontWeight: 'bold' }}>
+                                  ₹{(parseFloat(exp.amount) || 0).toLocaleString('en-IN')}
+                                </td>
+                                <td>
+                                  <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button className="btn btn-secondary" style={{ padding: '6px' }} title="Edit expense" onClick={() => openEditExpense(exp)}>
+                                      <Edit2 size={14} />
+                                    </button>
+                                    <button className="btn btn-danger" style={{ padding: '6px' }} title="Delete expense" onClick={() => deleteExpense(exp.id)}>
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        {expenses.length === 0 && (
                           <tr>
-                            <td colSpan="14" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '30px' }}>No settlements generated yet.</td>
+                            <td colSpan="7" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '30px' }}>
+                              No vehicle expenses recorded yet. Click "Log Vehicle Expense" to add maintenance, fuel, or repairs.
+                            </td>
                           </tr>
                         )}
                       </tbody>
@@ -1100,6 +1707,10 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                 </section>
               </div>
             )}
+
+
+
+
 
             {/* 7. BUSINESS REPORTS */}
             {activeTab === 'reports' && (
@@ -1138,22 +1749,28 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                 {reportsData && (
                   <div className="print-section" style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
                     <div className="card" style={{ textAlign: 'center' }}>
-                      <h2>ATHARVA ENTERPRISES - FLEET PERFORMANCE</h2>
+                      <h2>AC FLEET - FLEET PERFORMANCE REPORT</h2>
                       <p style={{ color: 'var(--text-secondary)' }}>Report Date Range: <b>{reportsData.period.start_date}</b> to <b>{reportsData.period.end_date}</b></p>
                     </div>
 
-                    <div className="grid-3">
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
                       <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                         <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Gross Revenue</span>
                         <h1 style={{ color: 'var(--primary)' }}>₹{reportsData.totalEarnings.toLocaleString('en-IN')}</h1>
                       </div>
                       <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                        <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Gross Approved Expenses</span>
+                        <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Direct Fleet Expenses</span>
                         <h1 style={{ color: 'var(--danger)' }}>₹{reportsData.totalExpenses.toLocaleString('en-IN')}</h1>
+                      </div>
+                      <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', borderLeft: '4px solid #f59e0b' }}>
+                        <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Total Paid to Drivers</span>
+                        <h1 style={{ color: '#f59e0b' }}>₹{Math.round(reportsData.totalDriverPayout || 0).toLocaleString('en-IN')}</h1>
                       </div>
                       <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                         <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Net Company Profit</span>
-                        <h1 style={{ color: 'var(--success)' }}>₹{reportsData.netProfit.toLocaleString('en-IN')}</h1>
+                        <h1 style={{ color: reportsData.netProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                          ₹{Math.round(reportsData.netProfit).toLocaleString('en-IN')}
+                        </h1>
                       </div>
                     </div>
 
@@ -1417,8 +2034,10 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
           <div className="modal-backdrop">
             <div className="modal-content">
               <div className="modal-header">
-                <h3 className="modal-title">Record Daily Vehicle Earnings</h3>
-                <button className="modal-close" onClick={() => setEarningModal({ show: false })}><X /></button>
+                <h3 className="modal-title">
+                  {earningModal.mode === 'edit' ? 'Edit Daily Vehicle Earnings' : 'Record Daily Vehicle Earnings'}
+                </h3>
+                <button className="modal-close" onClick={() => setEarningModal({ show: false, mode: 'add', data: null })}><X /></button>
               </div>
               <form onSubmit={saveEarning}>
                 <div className="modal-body">
@@ -1432,7 +2051,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                       <select className="form-input" value={earningForm.vehicle_id} onChange={(e) => setEarningForm({ ...earningForm, vehicle_id: e.target.value })} required>
                         <option value="">-- Select Vehicle --</option>
                         {vehicles.map(v => (
-                          <option key={v.id} value={v.id}>{v.vehicle_number}</option>
+                          <option key={v.id} value={v.id}>{v.vehicle_number} ({v.model_name})</option>
                         ))}
                       </select>
                     </div>
@@ -1441,7 +2060,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                       <select className="form-input" value={earningForm.driver_id} onChange={(e) => setEarningForm({ ...earningForm, driver_id: e.target.value })} required>
                         <option value="">-- Select Driver --</option>
                         {drivers.map(d => (
-                          <option key={d.driver_id} value={d.driver_id}>{d.name}</option>
+                          <option key={d.driver_id || d.id} value={d.driver_id || d.id}>{d.name}</option>
                         ))}
                       </select>
                     </div>
@@ -1473,7 +2092,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                   </div>
 
                   <div style={{ marginTop: '15px', borderTop: '1px solid var(--border-color)', paddingTop: '15px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--text-secondary)' }}>Expenses:</span>
+                    <span style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--text-secondary)' }}>Expenses (Fuel / CNG for this run):</span>
                   </div>
 
                   <div className="form-group" style={{ marginTop: '10px' }}>
@@ -1488,7 +2107,15 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                                   (parseFloat(earningForm.amount_rapido) || 0) +
                                   (parseFloat(earningForm.amount_private) || 0);
                     const exp = parseFloat(earningForm.expense) || 0;
-                    const profit = gross - exp;
+                    
+                    const selectedDriver = drivers.find(d => d.id === earningForm.driver_id || d.driver_id === earningForm.driver_id);
+                    const sharePct = selectedDriver ? (parseFloat(selectedDriver.share_percentage) || 50) : 50;
+
+                    // Driver payment is calculated AFTER deducting expenses
+                    const netAfterExpense = Math.max(0, gross - exp);
+                    const driverPayout = (netAfterExpense * sharePct) / 100;
+                    const dailyProfit = (gross - exp) - driverPayout;
+
                     return (
                       <div style={{
                         marginTop: '20px',
@@ -1505,8 +2132,23 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                           <b>₹{gross.toLocaleString('en-IN')}</b>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--danger)' }}>
-                          <span>Expense:</span>
+                          <span>Expense (Fuel / CNG):</span>
                           <b>- ₹{exp.toLocaleString('en-IN')}</b>
+                        </div>
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          fontSize: '13px',
+                          color: '#3b82f6',
+                          borderTop: '1px dashed var(--border-color)',
+                          paddingTop: '6px'
+                        }}>
+                          <span>Amount After Expense:</span>
+                          <b>₹{netAfterExpense.toLocaleString('en-IN')}</b>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#f59e0b' }}>
+                          <span>Driver Payment ({sharePct}% of Net):</span>
+                          <b>- ₹{Math.round(driverPayout).toLocaleString('en-IN')}</b>
                         </div>
                         <div style={{
                           display: 'flex',
@@ -1515,18 +2157,20 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                           borderTop: '1px solid var(--border-color)',
                           paddingTop: '8px',
                           fontSize: '16px',
-                          color: profit >= 0 ? 'var(--success)' : 'var(--danger)'
+                          color: dailyProfit >= 0 ? 'var(--success)' : 'var(--danger)'
                         }}>
-                          <span>Daily Profit:</span>
-                          <span>₹{profit.toLocaleString('en-IN')}</span>
+                          <span>Daily Company Profit:</span>
+                          <span>₹{Math.round(dailyProfit).toLocaleString('en-IN')}</span>
                         </div>
                       </div>
                     );
                   })()}
                 </div>
                 <div className="modal-footer">
-                  <button type="button" className="btn btn-secondary" onClick={() => setEarningModal({ show: false })}>Cancel</button>
-                  <button type="submit" className="btn btn-primary">Save Log</button>
+                  <button type="button" className="btn btn-secondary" onClick={() => setEarningModal({ show: false, mode: 'add', data: null })}>Cancel</button>
+                  <button type="submit" className="btn btn-primary">
+                    {earningModal.mode === 'edit' ? 'Update Log' : 'Save Log'}
+                  </button>
                 </div>
               </form>
             </div>
@@ -1538,8 +2182,10 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
           <div className="modal-backdrop">
             <div className="modal-content">
               <div className="modal-header">
-                <h3 className="modal-title">Record Fleet Expense</h3>
-                <button className="modal-close" onClick={() => setExpenseModal({ show: false })}><X /></button>
+                <h3 className="modal-title">
+                  {expenseModal.mode === 'edit' ? 'Edit Vehicle Expense' : 'Record Vehicle Expense'}
+                </h3>
+                <button className="modal-close" onClick={() => setExpenseModal({ show: false, mode: 'add', data: null })}><X /></button>
               </div>
               <form onSubmit={saveExpense}>
                 <div className="modal-body">
@@ -1552,12 +2198,13 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                       <label className="form-label">Expense Category</label>
                       <select className="form-input" value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })} required>
                         <option value="fuel">Fuel / CNG</option>
-                        <option value="toll">Tolls</option>
-                        <option value="parking">Parking</option>
-                        <option value="maintenance">Maintenance</option>
-                        <option value="puncture">Puncture</option>
+                        <option value="maintenance">Maintenance & Service</option>
+                        <option value="tyres">Tyres Replacement</option>
+                        <option value="puncture">Puncture / Repair</option>
                         <option value="insurance">Insurance Renewal</option>
                         <option value="permit">Permit Renewal</option>
+                        <option value="toll">Tolls</option>
+                        <option value="parking">Parking</option>
                         <option value="other">Other Expenses</option>
                       </select>
                     </div>
@@ -1569,161 +2216,94 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                       <select className="form-input" value={expenseForm.vehicle_id} onChange={(e) => setExpenseForm({ ...expenseForm, vehicle_id: e.target.value })} required>
                         <option value="">-- Select Vehicle --</option>
                         {vehicles.map(v => (
-                          <option key={v.id} value={v.id}>{v.vehicle_number}</option>
+                          <option key={v.id} value={v.id}>{v.vehicle_number} ({v.model_name})</option>
                         ))}
                       </select>
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Select Driver</label>
-                      <select className="form-input" value={expenseForm.driver_id} onChange={(e) => setExpenseForm({ ...expenseForm, driver_id: e.target.value })} required>
-                        <option value="">-- Select Driver --</option>
-                        {drivers.map(d => (
-                          <option key={d.driver_id} value={d.driver_id}>{d.name}</option>
-                        ))}
-                      </select>
+                      <label className="form-label">Amount (₹)</label>
+                      <input type="number" className="form-input" placeholder="e.g. 1500" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} required />
                     </div>
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Amount (₹)</label>
-                    <input type="number" className="form-input" placeholder="e.g. 500" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} required />
-                  </div>
-
-                  <div className="form-group">
                     <label className="form-label">Description / Remarks</label>
-                    <input type="text" className="form-input" placeholder="CNG refill at Auto pump" value={expenseForm.description} onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })} />
+                    <input type="text" className="form-input" placeholder="e.g. Engine oil change & filter replacement" value={expenseForm.description} onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })} />
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <button type="button" className="btn btn-secondary" onClick={() => setExpenseModal({ show: false })}>Cancel</button>
-                  <button type="submit" className="btn btn-primary">Save Expense</button>
+                  <button type="button" className="btn btn-secondary" onClick={() => setExpenseModal({ show: false, mode: 'add', data: null })}>Cancel</button>
+                  <button type="submit" className="btn btn-primary">
+                    {expenseModal.mode === 'edit' ? 'Update Expense' : 'Save Expense'}
+                  </button>
                 </div>
               </form>
             </div>
           </div>
         )}
 
-        {/* Settlement Split Calculation Preview Modal */}
-        {settleModal.show && settleModal.calculation && (
+
+
+        {/* Admin Credentials Modal */}
+        {adminModal && (
           <div className="modal-backdrop">
-            <div className="modal-content">
+            <div className="modal-content" style={{ maxWidth: '420px' }}>
               <div className="modal-header">
-                <h3 className="modal-title">Record Settlement & Payout Splits</h3>
-                <button className="modal-close" onClick={() => setSettleModal({ show: false, calculation: null })}><X /></button>
+                <h3 className="modal-title">Change Admin Login Details</h3>
+                <button className="modal-close" onClick={() => setAdminModal(false)}><X /></button>
               </div>
-              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                <div style={{ backgroundColor: 'var(--bg-tertiary)', padding: '16px', borderRadius: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Calculation Date:</span>
-                  <p style={{ fontWeight: 'bold' }}>{settleForm.date}</p>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
-                  <span>Total Earnings:</span>
-                  <b>₹{settleModal.calculation.totalEarnings.toLocaleString('en-IN')}</b>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
-                  <span>Fuel Expenses:</span>
-                  <b>- ₹{settleModal.calculation.fuelExpenses.toLocaleString('en-IN')}</b>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
-                  <span>Other Expenses:</span>
-                  <b>- ₹{settleModal.calculation.otherExpenses.toLocaleString('en-IN')}</b>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', fontWeight: 'bold' }}>
-                  <span>Amount After Expenses:</span>
-                  <b>₹{settleModal.calculation.amountAfterExpenses.toLocaleString('en-IN')}</b>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
-                  <span>Driver Share ({settleModal.calculation.driverPercentage}%):</span>
-                  <b>₹{settleModal.calculation.driverShare.toLocaleString('en-IN')}</b>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
-                  <span>My Share (Owner):</span>
-                  <b>₹{settleModal.calculation.ownerShare.toLocaleString('en-IN')}</b>
-                </div>
-
-                <div style={{ borderTop: '2px solid var(--border-color)', paddingTop: '15px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Paid to Driver (₹) - <i>Adjust if rounded/bonus</i></label>
+              <form onSubmit={handleUpdateAdminCreds}>
+                <div className="modal-body">
+                  <div className="form-group">
+                    <label className="form-label">Owner Name</label>
                     <input
-                      type="number"
-                      step="0.01"
+                      type="text"
                       className="form-input"
-                      value={settleFields.paid_to_driver}
-                      onChange={(e) => setSettleFields({ ...settleFields, paid_to_driver: parseFloat(e.target.value) || 0 })}
+                      value={adminCredsForm.name}
+                      onChange={(e) => setAdminCredsForm({ ...adminCredsForm, name: e.target.value })}
                       required
                     />
                   </div>
-
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Paid To (Bank / Payment Method)</label>
+                  <div className="form-group">
+                    <label className="form-label">Admin Login Mobile Number</label>
                     <input
-                      type="text"
+                      type="tel"
                       className="form-input"
-                      placeholder="bank of india"
-                      value={settleFields.paid_to}
-                      onChange={(e) => setSettleFields({ ...settleFields, paid_to: e.target.value })}
+                      placeholder="e.g. 8104517652"
+                      value={adminCredsForm.mobile}
+                      onChange={(e) => setAdminCredsForm({ ...adminCredsForm, mobile: e.target.value })}
+                      required
+                    />
+                    <small style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                      This mobile number is used to log in to the Admin Portal.
+                    </small>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">New Password</label>
+                    <input
+                      type="password"
+                      className="form-input"
+                      placeholder="Enter new password"
+                      value={adminCredsForm.password}
+                      onChange={(e) => setAdminCredsForm({ ...adminCredsForm, password: e.target.value })}
+                      required
                     />
                   </div>
-
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Payment Status</label>
-                    <select
-                      className="form-input"
-                      value={settleFields.status}
-                      onChange={(e) => setSettleFields({ ...settleFields, status: e.target.value })}
-                    >
-                      <option value="paid">Paid</option>
-                      <option value="pending">Pending</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderTop: '2px solid var(--primary)', fontSize: '18px', marginTop: '10px' }}>
-                  <span>Owner Net (owner):</span>
-                  <b style={{ color: 'var(--success)' }}>
-                    ₹{(settleModal.calculation.amountAfterExpenses - settleFields.paid_to_driver).toLocaleString('en-IN')}
-                  </b>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setSettleModal({ show: false, calculation: null })}>Cancel</button>
-                <button type="button" className="btn btn-primary" onClick={saveSettlement}>Save Settlement</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Record Settlement Payment Modal */}
-        {paySettlementForm.id && (
-          <div className="modal-backdrop">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h3 className="modal-title">Record Payout Payment</h3>
-                <button className="modal-close" onClick={() => setPaySettlementForm({ id: null, paid_to: '' })}><X /></button>
-              </div>
-              <form onSubmit={paySettlement}>
-                <div className="modal-body">
                   <div className="form-group">
-                    <label className="form-label">Paid To (Bank / Payment Method)</label>
+                    <label className="form-label">Confirm New Password</label>
                     <input
-                      type="text"
+                      type="password"
                       className="form-input"
-                      placeholder="bank of india"
-                      value={paySettlementForm.paid_to}
-                      onChange={(e) => setPaySettlementForm({ ...paySettlementForm, paid_to: e.target.value })}
+                      placeholder="Confirm new password"
+                      value={adminCredsForm.confirmPassword}
+                      onChange={(e) => setAdminCredsForm({ ...adminCredsForm, confirmPassword: e.target.value })}
                       required
                     />
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <button type="button" className="btn btn-secondary" onClick={() => setPaySettlementForm({ id: null, paid_to: '' })}>Close</button>
-                  <button type="submit" className="btn btn-primary">Mark as Paid</button>
+                  <button type="button" className="btn btn-secondary" onClick={() => setAdminModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary">Save New Details</button>
                 </div>
               </form>
             </div>

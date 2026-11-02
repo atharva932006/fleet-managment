@@ -191,10 +191,13 @@ async function initDb() {
         'INSERT INTO users (mobile, name, password_hash, role) VALUES (?, ?, ?, "driver")',
         [dr.mobile, dr.name, pwdHash]
       );
-      await query.run(
-        'INSERT INTO drivers (user_id, license_number, joining_date, share_percentage, assigned_vehicle_id) VALUES (?, ?, ?, ?, ?)',
-        [uResult.id, dr.license, dr.join, dr.share, dr.vId]
-      );
+      const driverExists = await query.get('SELECT id FROM drivers WHERE license_number = ?', [dr.license]);
+      if (!driverExists) {
+        await query.run(
+          'INSERT INTO drivers (user_id, license_number, joining_date, share_percentage, assigned_vehicle_id) VALUES (?, ?, ?, ?, ?)',
+          [uResult.id, dr.license, dr.join, dr.share, dr.vId]
+        );
+      }
     }
   }
 
@@ -203,7 +206,8 @@ async function initDb() {
   const aniruddhRow = await query.get('SELECT id FROM drivers WHERE user_id = (SELECT id FROM users WHERE mobile = "9000000004")');
   const atharvaRow = await query.get('SELECT id FROM drivers WHERE user_id = (SELECT id FROM users WHERE mobile = "9000000005")');
 
-  if (uncleRow && aniruddhRow && atharvaRow) {
+  const earningsCount = await query.get('SELECT COUNT(*) as cnt FROM earnings');
+  if (uncleRow && aniruddhRow && atharvaRow && earningsCount.cnt === 0) {
     // Seed Earnings with daily expenses directly inside the table
     // 23/05/2026 (60 year uncle)
     await query.run(

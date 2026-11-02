@@ -1,15 +1,15 @@
 {
-  "short_name": "Atharva Fleet",
-  "name": "Atharva Enterprises Fleet Manager",
-  "description": "Premium Fleet Management Web App for Atharva Enterprises",
+  "short_name": "AC Fleet",
+  "name": "AC Fleet - Fleet Rental Mobility",
+  "description": "AC Fleet Management Portal - Fleet • Rental • Mobility",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/1048/1048314.png",
+      "src": "/icon-192.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/1048/1048314.png",
+      "src": "/icon-512.png",
       "type": "image/png",
       "sizes": "512x512"
     }

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import OwnerDashboard from './pages/OwnerDashboard';
 import DriverDashboard from './pages/DriverDashboard';
+import acLogo from './assets/logo.png';
 import './styles/main.css';
 
 // Login Component
@@ -29,8 +30,14 @@ const Login = () => {
   return (
     <div className="login-container">
       <div className="login-card">
-        <h1 className="login-logo">Atharva Enterprises</h1>
-        <p className="login-subtitle">Fleet Management Portal</p>
+        <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+          <img
+            src={acLogo}
+            alt="AC Fleet - Fleet Rental Mobility"
+            style={{ maxWidth: '260px', width: '100%', height: 'auto', display: 'inline-block' }}
+          />
+        </div>
+        <p className="login-subtitle" style={{ marginTop: '0', marginBottom: '24px' }}>Fleet Management Portal</p>
         
         {error && (
           <div style={{
@@ -54,7 +61,7 @@ const Login = () => {
             <input
               type="tel"
               className="form-input"
-              placeholder="e.g. 9876543210"
+              placeholder="e.g. 8104517652"
               value={mobile}
               onChange={(e) => setMobile(e.target.value)}
               required
@@ -79,11 +86,6 @@ const Login = () => {
             {loading ? 'Logging in...' : 'Secure Login'}
           </button>
         </form>
-
-        <div style={{ marginTop: '25px', color: 'var(--text-muted)', fontSize: '12px' }}>
-          <p>Demo Admin: Mobile: <b>9876543210</b> / Password: <b>admin123</b></p>
-          <p style={{ marginTop: '5px' }}>Demo Driver: Mobile: <b>9000000001</b> / Password: <b>driver123</b></p>
-        </div>
       </div>
     </div>
   );
