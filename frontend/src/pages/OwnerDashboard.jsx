@@ -12,14 +12,12 @@ import {
   deleteExpense as dbDeleteExpense,
   generateFinancialReport as dbGenerateReport,
   getAdminCredentials,
-  updateAdminCredentials,
-  getDriverApplications
+  updateAdminCredentials
 } from '../firebase/services';
 import {
   LayoutDashboard, Car, Users, IndianRupee, AlertTriangle, TrendingUp, Plus,
   Edit2, Trash2, LogOut, Sun, Moon, FileText, Check, X, Eye, Download, Bell, Info,
-  Receipt, Wrench, Fuel, Key, Lock, CalendarDays, CalendarRange, ChevronLeft, ChevronRight, BarChart3,
-  Globe, UserPlus, PhoneCall, MessageSquare
+  Receipt, Wrench, Fuel, Key, Lock, CalendarDays, CalendarRange, ChevronLeft, ChevronRight, BarChart3
 } from 'lucide-react';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement,
@@ -34,7 +32,7 @@ ChartJS.register(
   Title, Tooltip, Legend, Filler
 );
 
-const OwnerDashboard = ({ toggleTheme, darkMode, onNavigateToAbout }) => {
+const OwnerDashboard = ({ toggleTheme, darkMode }) => {
   const { logout, user } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [stats, setStats] = useState(null);
@@ -44,7 +42,6 @@ const OwnerDashboard = ({ toggleTheme, darkMode, onNavigateToAbout }) => {
   const [expenses, setExpenses] = useState([]);
   const [settlements, setSettlements] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -111,13 +108,6 @@ const OwnerDashboard = ({ toggleTheme, darkMode, onNavigateToAbout }) => {
       setExpenses(data.expenses || []);
       setSettlements(data.settlements || []);
       setNotifications(data.notifications || []);
-
-      try {
-        const apps = await getDriverApplications();
-        setApplications(apps || []);
-      } catch (appErr) {
-        console.warn("Applications load error:", appErr);
-      }
     } catch (err) {
       console.error("Dashboard data load error:", err);
       setError('Error loading dashboard data. Please try again.');
@@ -661,46 +651,6 @@ const OwnerDashboard = ({ toggleTheme, darkMode, onNavigateToAbout }) => {
               </div>
             </a>
           </li>
-          <li className="sidebar-item">
-            <a className={`sidebar-link ${activeTab === 'applications' ? 'active' : ''}`} onClick={() => setActiveTab('applications')}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <UserPlus size={18} />
-                  <span>Driver Applications</span>
-                </div>
-                {applications.length > 0 && (
-                  <span style={{
-                    backgroundColor: '#0284c7',
-                    color: '#ffffff',
-                    borderRadius: '9999px',
-                    padding: '2px 7px',
-                    fontSize: '11px',
-                    fontWeight: '800'
-                  }}>
-                    {applications.length}
-                  </span>
-                )}
-              </div>
-            </a>
-          </li>
-
-          {onNavigateToAbout && (
-            <li className="sidebar-item" style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
-              <a 
-                className="sidebar-link" 
-                onClick={onNavigateToAbout}
-                style={{
-                  color: '#0284c7',
-                  fontWeight: '700',
-                  backgroundColor: 'rgba(2, 132, 199, 0.08)',
-                  borderRadius: '10px'
-                }}
-              >
-                <Globe size={18} />
-                <span>🌐 Public Website (About Us)</span>
-              </a>
-            </li>
-          )}
         </ul>
 
         <div className="sidebar-footer">
@@ -736,23 +686,11 @@ const OwnerDashboard = ({ toggleTheme, darkMode, onNavigateToAbout }) => {
               {activeTab === 'expenses' && 'Vehicle Expenses Management'}
               {activeTab === 'reports' && 'Financial Reports & Analytics'}
               {activeTab === 'alerts' && 'System alerts & Expiries'}
-              {activeTab === 'applications' && 'Driver Applications & Inquiries'}
             </h1>
             <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>AC Fleet - Fleet • Rental • Mobility</p>
           </div>
           
           <div className="nav-actions">
-            {onNavigateToAbout && (
-              <button 
-                className="btn btn-secondary" 
-                onClick={onNavigateToAbout}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}
-                title="View public website (About Us page)"
-              >
-                <Globe size={14} color="#0284c7" />
-                <span>Public Website</span>
-              </button>
-            )}
             {activeTab === 'dashboard' && (
               <span style={{ fontSize: '13px', backgroundColor: 'var(--bg-tertiary)', padding: '6px 12px', borderRadius: '20px' }}>
                 Today: <b>{new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</b>
@@ -1951,120 +1889,6 @@ const OwnerDashboard = ({ toggleTheme, darkMode, onNavigateToAbout }) => {
                     </div>
                   )}
                 </div>
-              </section>
-            )}
-
-            {/* 9. DRIVER APPLICATIONS (From Public Website) */}
-            {activeTab === 'applications' && (
-              <section className="card">
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-                  <div>
-                    <h2 style={{ fontSize: '18px', fontWeight: '800', margin: '0 0 4px' }}>Incoming Driver Inquiries</h2>
-                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
-                      Candidates who submitted the "Start Driving Today" application on your public website.
-                    </p>
-                  </div>
-                  {onNavigateToAbout && (
-                    <button 
-                      className="btn btn-secondary" 
-                      onClick={onNavigateToAbout}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
-                    >
-                      <Globe size={15} color="#0284c7" />
-                      <span>View Public Website Form</span>
-                    </button>
-                  )}
-                </div>
-
-                {applications.length > 0 ? (
-                  <div className="table-responsive">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Date</th>
-                          <th>Candidate Name</th>
-                          <th>Mobile & Contact</th>
-                          <th>City / Area</th>
-                          <th>Experience</th>
-                          <th>Preferred Vehicle</th>
-                          <th>Preferred Platform</th>
-                          <th>Direct Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {applications.map((app, idx) => (
-                          <tr key={app.id || idx}>
-                            <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                              {app.created_at ? new Date(app.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recent'}
-                            </td>
-                            <td>
-                              <b style={{ color: 'var(--text-primary)' }}>{app.full_name}</b>
-                            </td>
-                            <td>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ fontWeight: '600' }}>{app.mobile_number}</span>
-                              </div>
-                            </td>
-                            <td>
-                              <span className="badge badge-info">{app.city || 'Mumbai'}</span>
-                            </td>
-                            <td>{app.experience_years || '2-5 years'}</td>
-                            <td>
-                              <span style={{ fontSize: '13px', fontWeight: '600' }}>{app.vehicle_preference || 'Dzire (CNG)'}</span>
-                            </td>
-                            <td>
-                              <span className="badge badge-ola">{app.preferred_platform || 'Uber & Ola'}</span>
-                            </td>
-                            <td>
-                              <div style={{ display: 'flex', gap: '8px' }}>
-                                <a
-                                  href={`tel:${app.mobile_number}`}
-                                  className="btn btn-secondary"
-                                  style={{ padding: '6px 10px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                                  title="Call Candidate"
-                                >
-                                  <PhoneCall size={14} color="#0284c7" />
-                                  <span>Call</span>
-                                </a>
-                                <a
-                                  href={`https://wa.me/91${app.mobile_number.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(app.full_name)}%2C%20this%20is%20Atharva%20from%20AC%20Fleet.%20We%20received%20your%20driver%20application!`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="btn btn-secondary"
-                                  style={{ padding: '6px 10px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#16a34a' }}
-                                  title="WhatsApp Candidate"
-                                >
-                                  <MessageSquare size={14} color="#16a34a" />
-                                  <span>WhatsApp</span>
-                                </a>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--text-muted)' }}>
-                    <UserPlus size={44} style={{ marginBottom: '14px', color: '#0284c7', opacity: 0.7 }} />
-                    <h3 style={{ fontSize: '17px', fontWeight: '700', marginBottom: '8px', color: 'var(--text-primary)' }}>
-                      No Driver Applications Yet
-                    </h3>
-                    <p style={{ maxWidth: '480px', margin: '0 auto 20px', fontSize: '14px', lineHeight: '1.6' }}>
-                      When drivers or partners visit your website (<strong>https://acfleet.netlify.app/</strong>) and fill out the "Start Driving Today" form, their inquiries will appear here automatically!
-                    </p>
-                    {onNavigateToAbout && (
-                      <button 
-                        className="btn btn-primary" 
-                        onClick={onNavigateToAbout}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-                      >
-                        <Globe size={16} />
-                        <span>Visit Website Application Form</span>
-                      </button>
-                    )}
-                  </div>
-                )}
               </section>
             )}
           </>
