@@ -4,10 +4,10 @@ import { getDriverDashboardData } from '../firebase/services';
 import acLogo from '../assets/logo.png';
 import {
   Car, IndianRupee, Calendar, TrendingUp, LogOut, Sun, Moon,
-  CheckCircle2, Clock, AlertTriangle, ShieldCheck
+  CheckCircle2, Clock, AlertTriangle, ShieldCheck, Globe
 } from 'lucide-react';
 
-const DriverDashboard = ({ toggleTheme, darkMode }) => {
+const DriverDashboard = ({ toggleTheme, darkMode, onNavigateToAbout }) => {
   const { logout, user } = useAuth();
   const [data, setData] = useState({
     todayEarnings: 0,
@@ -282,6 +282,28 @@ const DriverDashboard = ({ toggleTheme, darkMode }) => {
               </div>
             )}
           </section>
+
+          {onNavigateToAbout && (
+            <div style={{ textAlign: 'center', marginTop: '24px', paddingBottom: '16px' }}>
+              <button
+                onClick={onNavigateToAbout}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#0284c7',
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Globe size={15} />
+                <span>Visit AC Fleet About Us & Company Info</span>
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>
