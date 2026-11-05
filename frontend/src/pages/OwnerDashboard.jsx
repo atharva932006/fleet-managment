@@ -71,7 +71,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
   // Form states
   const [vehicleForm, setVehicleForm] = useState({
     vehicle_number: '', model_name: '', fuel_type: 'CNG',
-    insurance_expiry: '', permit_expiry: '', puc_expiry: '',
+    insurance_expiry: '', fitness_expiry: '', tax_expiry: '', permit_expiry: '', puc_expiry: '',
     service_due: '', tyre_replacement: '', status: 'active'
   });
   const [driverForm, setDriverForm] = useState({
@@ -149,7 +149,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
       setVehicleModal({ show: false, mode: 'add', data: null });
       setVehicleForm({
         vehicle_number: '', model_name: '', fuel_type: 'CNG',
-        insurance_expiry: '', permit_expiry: '', puc_expiry: '',
+        insurance_expiry: '', fitness_expiry: '', tax_expiry: '', permit_expiry: '', puc_expiry: '',
         service_due: '', tyre_replacement: '', status: 'active'
       });
       await fetchData();
@@ -162,10 +162,12 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
   const deleteVehicle = async (id) => {
     if (!confirm('Are you sure you want to remove this vehicle? All linked records will be affected.')) return;
     try {
+      setVehicles(prev => prev.filter(v => v.id !== id));
       await dbDeleteVehicle(id);
       await fetchData();
     } catch (err) {
       alert(err.message);
+      await fetchData();
     }
   };
 
@@ -190,10 +192,12 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
   const deleteDriver = async (id) => {
     if (!confirm('Are you sure you want to remove this driver? Driver account access will be revoked.')) return;
     try {
+      setDrivers(prev => prev.filter(d => d.id !== id && d.driver_id !== id));
       await dbDeleteDriver(id);
       await fetchData();
     } catch (err) {
       alert(err.message);
+      await fetchData();
     }
   };
 
@@ -311,7 +315,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
   const openAddVehicle = () => {
     setVehicleForm({
       vehicle_number: '', model_name: '', fuel_type: 'CNG',
-      insurance_expiry: '', permit_expiry: '', puc_expiry: '',
+      insurance_expiry: '', fitness_expiry: '', tax_expiry: '', permit_expiry: '', puc_expiry: '',
       service_due: '', tyre_replacement: '', status: 'active'
     });
     setVehicleModal({ show: true, mode: 'add', data: null });
@@ -320,8 +324,14 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
   const openEditVehicle = (v) => {
     setVehicleForm({
       vehicle_number: v.vehicle_number, model_name: v.model_name, fuel_type: v.fuel_type,
-      insurance_expiry: v.insurance_expiry, permit_expiry: v.permit_expiry, puc_expiry: v.puc_expiry,
-      service_due: v.service_due, tyre_replacement: v.tyre_replacement, status: v.status
+      insurance_expiry: v.insurance_expiry || '',
+      fitness_expiry: v.fitness_expiry || '',
+      tax_expiry: v.tax_expiry || '',
+      permit_expiry: v.permit_expiry || '',
+      puc_expiry: v.puc_expiry || '',
+      service_due: v.service_due || '',
+      tyre_replacement: v.tyre_replacement || '',
+      status: v.status || 'active'
     });
     setVehicleModal({ show: true, mode: 'edit', data: v });
   };
@@ -337,7 +347,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
   const openEditDriver = (d) => {
     setDriverForm({
       name: d.name, mobile: d.mobile, password: '', license_number: d.license_number,
-      joining_date: d.joining_date, share_percentage: d.share_percentage,
+      joining_date: d.joining_date, share_percentage: d.share_percentage !== undefined ? d.share_percentage : 50,
       assigned_vehicle_id: d.assigned_vehicle_id || '', user_id: d.user_id
     });
     setDriverModal({ show: true, mode: 'edit', data: d });
@@ -882,7 +892,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                   id: key,
                   name: d.name,
                   mobile: d.mobile,
-                  sharePct: d.share_percentage || 50,
+                  sharePct: d.share_percentage !== undefined ? parseFloat(d.share_percentage) : 50,
                   logsCount: 0,
                   gross: 0,
                   payout: 0,
@@ -896,7 +906,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                 const netAfterExp = Math.max(0, gross - exp);
                 const driverPay = e.driver_share_amount !== undefined
                   ? parseFloat(e.driver_share_amount)
-                  : (netAfterExp * (parseFloat(e.driver_share_percentage) || 50) / 100);
+                  : (netAfterExp * (e.driver_share_percentage !== undefined && e.driver_share_percentage !== '' ? parseFloat(e.driver_share_percentage) : 50) / 100);
                 const netProfit = (gross - exp) - driverPay;
 
                 totalGross += gross;
@@ -1258,7 +1268,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                             const netAfterExp = Math.max(0, gross - exp);
                             const driverPay = e.driver_share_amount !== undefined
                               ? parseFloat(e.driver_share_amount)
-                              : (netAfterExp * (parseFloat(e.driver_share_percentage) || 50) / 100);
+                              : (netAfterExp * (e.driver_share_percentage !== undefined && e.driver_share_percentage !== '' ? parseFloat(e.driver_share_percentage) : 50) / 100);
                             const netProfit = e.net_profit !== undefined ? parseFloat(e.net_profit) : ((gross - exp) - driverPay);
 
                             return (
@@ -1366,6 +1376,8 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                         <th>Model Name</th>
                         <th>Fuel Type</th>
                         <th>Insurance Expiry</th>
+                        <th>Fitness Expiry</th>
+                        <th>Tax Expiry</th>
                         <th>Permit Expiry</th>
                         <th>PUC Expiry</th>
                         <th>Service Due</th>
@@ -1377,6 +1389,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                     <tbody>
                       {vehicles.map((v) => {
                         const checkExpiry = (dateStr) => {
+                          if (!dateStr) return { style: {}, tag: 'N/A' };
                           const diff = new Date(dateStr) - new Date();
                           const diffDays = Math.ceil(diff / (1000 * 60 * 60 * 24));
                           if (diffDays < 0) return { style: { color: 'var(--danger)', fontWeight: 'bold' }, tag: 'Expired' };
@@ -1392,6 +1405,8 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                               <span className={`badge badge-info`}>{v.fuel_type}</span>
                             </td>
                             <td style={checkExpiry(v.insurance_expiry).style}>{v.insurance_expiry}</td>
+                            <td style={checkExpiry(v.fitness_expiry).style}>{v.fitness_expiry || 'N/A'}</td>
+                            <td style={checkExpiry(v.tax_expiry).style}>{v.tax_expiry || 'N/A'}</td>
                             <td style={checkExpiry(v.permit_expiry).style}>{v.permit_expiry}</td>
                             <td style={checkExpiry(v.puc_expiry).style}>{v.puc_expiry}</td>
                             <td style={checkExpiry(v.service_due).style}>{v.service_due}</td>
@@ -1406,7 +1421,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                                 <button className="btn btn-secondary" style={{ padding: '6px' }} onClick={() => openEditVehicle(v)}>
                                   <Edit2 size={14} />
                                 </button>
-                                <button className="btn btn-danger" style={{ padding: '6px' }} onClick={() => deleteVehicle(v.id)}>
+                                <button className="btn btn-danger" style={{ padding: '6px' }} onClick={() => deleteVehicle(v.id || v.vehicle_number)}>
                                   <Trash2 size={14} />
                                 </button>
                               </div>
@@ -1416,7 +1431,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                       })}
                       {vehicles.length === 0 && (
                         <tr>
-                          <td colSpan="10" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '30px' }}>No vehicles registered in fleet.</td>
+                          <td colSpan="12" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '30px' }}>No vehicles registered in fleet.</td>
                         </tr>
                       )}
                     </tbody>
@@ -1448,14 +1463,14 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                           <td>{d.mobile}</td>
                           <td>{d.license_number}</td>
                           <td>{d.joining_date}</td>
-                          <td>{d.share_percentage}%</td>
+                          <td>{d.share_percentage !== undefined ? d.share_percentage : 50}%</td>
                           <td>{d.vehicle_number ? `${d.vehicle_number} (${d.model_name})` : <span style={{ color: 'var(--text-muted)' }}>Unassigned</span>}</td>
                           <td>
                             <div style={{ display: 'flex', gap: '8px' }}>
                               <button className="btn btn-secondary" style={{ padding: '6px' }} onClick={() => openEditDriver(d)}>
                                 <Edit2 size={14} />
                               </button>
-                              <button className="btn btn-danger" style={{ padding: '6px' }} onClick={() => deleteDriver(d.driver_id)}>
+                              <button className="btn btn-danger" style={{ padding: '6px' }} onClick={() => deleteDriver(d.id || d.driver_id)}>
                                 <Trash2 size={14} />
                               </button>
                             </div>
@@ -1501,7 +1516,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                         const netAfterExp = Math.max(0, gross - exp);
                         const driverPay = e.driver_share_amount !== undefined 
                           ? parseFloat(e.driver_share_amount) 
-                          : (netAfterExp * (parseFloat(e.driver_share_percentage) || 50) / 100);
+                          : (netAfterExp * (e.driver_share_percentage !== undefined && e.driver_share_percentage !== '' ? parseFloat(e.driver_share_percentage) : 50) / 100);
                         const netProfit = e.net_profit !== undefined ? parseFloat(e.net_profit) : ((gross - exp) - driverPay);
 
                         return (
@@ -1944,6 +1959,16 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                   </div>
                   <div className="grid-2">
                     <div className="form-group">
+                      <label className="form-label">Fitness Expiry Date</label>
+                      <input type="date" className="form-input" value={vehicleForm.fitness_expiry || ''} onChange={(e) => setVehicleForm({ ...vehicleForm, fitness_expiry: e.target.value })} required />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Tax Expiry Date</label>
+                      <input type="date" className="form-input" value={vehicleForm.tax_expiry || ''} onChange={(e) => setVehicleForm({ ...vehicleForm, tax_expiry: e.target.value })} required />
+                    </div>
+                  </div>
+                  <div className="grid-2">
+                    <div className="form-group">
                       <label className="form-label">PUC Expiry Date</label>
                       <input type="date" className="form-input" value={vehicleForm.puc_expiry} onChange={(e) => setVehicleForm({ ...vehicleForm, puc_expiry: e.target.value })} required />
                     </div>
@@ -2002,11 +2027,13 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                     <div className="form-group">
                       <label className="form-label">Driver Share Percentage</label>
                       <select className="form-input" value={driverForm.share_percentage} onChange={(e) => setDriverForm({ ...driverForm, share_percentage: parseFloat(e.target.value) })} required>
-                        <option value="40">40% Share</option>
-                        <option value="50">50% Share</option>
+                        <option value="0">0% Share (Fixed Salary / Rental / 100% Company)</option>
                         <option value="30">30% Share</option>
+                        <option value="40">40% Share</option>
                         <option value="45">45% Share</option>
+                        <option value="50">50% Share</option>
                         <option value="60">60% Share (Custom)</option>
+                        <option value="70">70% Share</option>
                       </select>
                     </div>
                   </div>
@@ -2109,7 +2136,7 @@ const OwnerDashboard = ({ toggleTheme, darkMode }) => {
                     const exp = parseFloat(earningForm.expense) || 0;
                     
                     const selectedDriver = drivers.find(d => d.id === earningForm.driver_id || d.driver_id === earningForm.driver_id);
-                    const sharePct = selectedDriver ? (parseFloat(selectedDriver.share_percentage) || 50) : 50;
+                    const sharePct = (selectedDriver && selectedDriver.share_percentage !== undefined && selectedDriver.share_percentage !== '') ? parseFloat(selectedDriver.share_percentage) : 50;
 
                     // Driver payment is calculated AFTER deducting expenses
                     const netAfterExpense = Math.max(0, gross - exp);

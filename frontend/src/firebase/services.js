@@ -38,6 +38,8 @@ const INITIAL_VEHICLES = [
     fuel_type: 'CNG',
     status: 'active',
     insurance_expiry: '2026-11-20',
+    fitness_expiry: '2027-05-15',
+    tax_expiry: '2027-03-31',
     permit_expiry: '2027-04-15',
     puc_expiry: '2026-12-10',
     service_due: '2026-11-15',
@@ -50,6 +52,8 @@ const INITIAL_VEHICLES = [
     fuel_type: 'CNG',
     status: 'active',
     insurance_expiry: '2026-10-30',
+    fitness_expiry: '2027-04-20',
+    tax_expiry: '2027-01-31',
     permit_expiry: '2027-01-10',
     puc_expiry: '2026-11-25',
     service_due: '2026-11-10',
@@ -62,6 +66,8 @@ const INITIAL_VEHICLES = [
     fuel_type: 'CNG',
     status: 'active',
     insurance_expiry: '2027-03-01',
+    fitness_expiry: '2027-08-10',
+    tax_expiry: '2027-06-30',
     permit_expiry: '2027-06-20',
     puc_expiry: '2027-01-15',
     service_due: '2026-12-05',
@@ -74,6 +80,8 @@ const INITIAL_VEHICLES = [
     fuel_type: 'Petrol',
     status: 'active',
     insurance_expiry: '2026-12-15',
+    fitness_expiry: '2027-06-25',
+    tax_expiry: '2027-04-30',
     permit_expiry: '2027-03-25',
     puc_expiry: '2026-12-28',
     service_due: '2026-12-01',
@@ -86,6 +94,8 @@ const INITIAL_VEHICLES = [
     fuel_type: 'CNG',
     status: 'active',
     insurance_expiry: '2026-11-05',
+    fitness_expiry: '2027-05-10',
+    tax_expiry: '2027-02-28',
     permit_expiry: '2027-05-18',
     puc_expiry: '2026-11-18',
     service_due: '2026-11-25',
@@ -98,6 +108,8 @@ const INITIAL_VEHICLES = [
     fuel_type: 'Diesel',
     status: 'active',
     insurance_expiry: '2026-12-30',
+    fitness_expiry: '2027-07-20',
+    tax_expiry: '2027-05-31',
     permit_expiry: '2027-07-12',
     puc_expiry: '2027-02-14',
     service_due: '2026-12-20',
@@ -185,30 +197,33 @@ function handleFirestoreError(err, actionName) {
 // ----------------------------------------------------------------------------
 export async function seedInitialDataIfNeeded() {
   try {
-    const vSnap = await getDocs(collection(db, VEHICLES_COLLECTION));
-    if (vSnap.empty) {
-      console.log("Seeding fleet to new Firestore project...");
-      const batch = writeBatch(db);
-
-      // Admin user
-      batch.set(doc(collection(db, USERS_COLLECTION), 'admin_atharva'), {
-        mobile: '8104517652',
-        name: 'AC Fleet Owner',
-        role: 'owner',
-        password: '8104517652'
-      });
-
-      INITIAL_VEHICLES.forEach(v => {
-        batch.set(doc(collection(db, VEHICLES_COLLECTION), v.id), v);
-      });
-
-      INITIAL_DRIVERS.forEach(d => {
-        batch.set(doc(collection(db, DRIVERS_COLLECTION), d.id), d);
-      });
-
-      await batch.commit();
-      console.log("Firestore successfully seeded with 6 cars and drivers!");
+    // Check if the system has already been initialized (never re-seed over deleted fleet!)
+    const adminDoc = await getDoc(doc(db, USERS_COLLECTION, 'admin_atharva'));
+    if (adminDoc.exists()) {
+      return;
     }
+
+    console.log("Seeding fleet to new Firestore project...");
+    const batch = writeBatch(db);
+
+    // Admin user
+    batch.set(doc(collection(db, USERS_COLLECTION), 'admin_atharva'), {
+      mobile: '8104517652',
+      name: 'AC Fleet Owner',
+      role: 'owner',
+      password: '8104517652'
+    });
+
+    INITIAL_VEHICLES.forEach(v => {
+      batch.set(doc(collection(db, VEHICLES_COLLECTION), v.id), v);
+    });
+
+    INITIAL_DRIVERS.forEach(d => {
+      batch.set(doc(collection(db, DRIVERS_COLLECTION), d.id), d);
+    });
+
+    await batch.commit();
+    console.log("Firestore successfully seeded once with initial fleet!");
   } catch (err) {
     console.warn("Firestore seed check:", err.message);
   }
@@ -336,15 +351,13 @@ export async function authenticateUser(mobile, password) {
 export async function getVehicles() {
   try {
     const snap = await getDocs(collection(db, VEHICLES_COLLECTION));
-    if (!snap.empty) {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setLocal('vehicles', list);
-      return list;
-    }
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    setLocal('vehicles', list);
+    return list;
   } catch (e) {
     console.warn("Firestore getVehicles:", e.message);
   }
-  return getLocal('vehicles', INITIAL_VEHICLES);
+  return getLocal('vehicles', []);
 }
 
 export async function saveVehicle(vehicleData, id = null) {
@@ -360,7 +373,7 @@ export async function saveVehicle(vehicleData, id = null) {
   }
 
   // Update local cache
-  let vehicles = getLocal('vehicles', INITIAL_VEHICLES);
+  let vehicles = getLocal('vehicles', []);
   const idx = vehicles.findIndex(v => v.id === targetId);
   if (idx > -1) vehicles[idx] = record;
   else vehicles.push(record);
@@ -370,15 +383,19 @@ export async function saveVehicle(vehicleData, id = null) {
 }
 
 export async function deleteVehicle(id) {
+  if (!id) return false;
+  const targetId = typeof id === 'object' ? (id.id || id.vehicle_id) : id;
+
   try {
-    await deleteDoc(doc(db, VEHICLES_COLLECTION, id));
-    console.log("Deleted vehicle from Cloud Firestore:", id);
+    await deleteDoc(doc(db, VEHICLES_COLLECTION, targetId));
+    console.log("Deleted vehicle from Cloud Firestore:", targetId);
   } catch (err) {
+    console.warn("Firestore deleteVehicle warning:", err);
     handleFirestoreError(err, 'deleteVehicle');
   }
 
-  let vehicles = getLocal('vehicles', INITIAL_VEHICLES);
-  vehicles = vehicles.filter(v => v.id !== id);
+  let vehicles = getLocal('vehicles', []);
+  vehicles = vehicles.filter(v => v.id !== targetId);
   setLocal('vehicles', vehicles);
   return true;
 }
@@ -389,19 +406,21 @@ export async function deleteVehicle(id) {
 export async function getDrivers() {
   try {
     const snap = await getDocs(collection(db, DRIVERS_COLLECTION));
-    if (!snap.empty) {
-      const list = snap.docs.map(d => ({ id: d.id, driver_id: d.id, ...d.data() }));
-      setLocal('drivers', list);
-      return list;
-    }
+    const list = snap.docs.map(d => ({ id: d.id, driver_id: d.id, ...d.data() }));
+    setLocal('drivers', list);
+    return list;
   } catch (e) {
     console.warn("Firestore getDrivers:", e.message);
   }
-  return getLocal('drivers', INITIAL_DRIVERS);
+  return getLocal('drivers', []);
 }
 
 export async function saveDriver(driverData, id = null) {
   const targetId = id || `drv_${Date.now()}`;
+  const share = (driverData.share_percentage !== undefined && driverData.share_percentage !== '') 
+    ? parseFloat(driverData.share_percentage) 
+    : 50;
+
   const record = {
     id: targetId,
     driver_id: targetId,
@@ -410,7 +429,7 @@ export async function saveDriver(driverData, id = null) {
     password: driverData.password || 'driver123',
     license_number: driverData.license_number,
     joining_date: driverData.joining_date,
-    share_percentage: parseFloat(driverData.share_percentage) || 50,
+    share_percentage: isNaN(share) ? 50 : share,
     assigned_vehicle_id: driverData.assigned_vehicle_id || '',
     status: driverData.status || 'active',
     updatedAt: new Date().toISOString()
@@ -423,7 +442,7 @@ export async function saveDriver(driverData, id = null) {
     handleFirestoreError(err, 'saveDriver');
   }
 
-  let drivers = getLocal('drivers', INITIAL_DRIVERS);
+  let drivers = getLocal('drivers', []);
   const idx = drivers.findIndex(d => d.id === targetId || d.driver_id === targetId);
   if (idx > -1) drivers[idx] = record;
   else drivers.push(record);
@@ -433,14 +452,19 @@ export async function saveDriver(driverData, id = null) {
 }
 
 export async function deleteDriver(id) {
+  if (!id) return false;
+  const targetId = typeof id === 'object' ? (id.driver_id || id.id) : id;
+
   try {
-    await deleteDoc(doc(db, DRIVERS_COLLECTION, id));
+    await deleteDoc(doc(db, DRIVERS_COLLECTION, targetId));
+    console.log("Deleted driver from Cloud Firestore:", targetId);
   } catch (err) {
+    console.warn("Firestore deleteDriver warning:", err);
     handleFirestoreError(err, 'deleteDriver');
   }
 
-  let drivers = getLocal('drivers', INITIAL_DRIVERS);
-  drivers = drivers.filter(d => d.id !== id && d.driver_id !== id);
+  let drivers = getLocal('drivers', []);
+  drivers = drivers.filter(d => d.id !== targetId && d.driver_id !== targetId);
   setLocal('drivers', drivers);
   return true;
 }
@@ -477,7 +501,9 @@ export async function saveEarning(form, id = null) {
   const driver = drivers.find(d => d.id === form.driver_id || d.driver_id === form.driver_id);
   const vehicle = vehicles.find(v => v.id === form.vehicle_id);
 
-  const driverSharePercentage = driver ? (parseFloat(driver.share_percentage) || 50) : 50;
+  const driverSharePercentage = (driver && driver.share_percentage !== undefined && driver.share_percentage !== '') 
+    ? parseFloat(driver.share_percentage) 
+    : 50;
   // Driver payment is calculated after deducting expenses
   const netAfterExpense = Math.max(0, total_amount - expense);
   const driverShareAmount = (netAfterExpense * driverSharePercentage) / 100;
@@ -701,7 +727,7 @@ export async function getOwnerDashboardData() {
     const exp = parseFloat(e.expense) || 0;
     const driverPay = e.driver_share_amount !== undefined 
       ? parseFloat(e.driver_share_amount) 
-      : (Math.max(0, gross - exp) * (parseFloat(e.driver_share_percentage) || 50) / 100);
+      : (Math.max(0, gross - exp) * (e.driver_share_percentage !== undefined && e.driver_share_percentage !== '' ? parseFloat(e.driver_share_percentage) : 50) / 100);
     const eDate = e.date || '';
 
     if (eDate === todayStr) {
@@ -787,6 +813,8 @@ export async function getOwnerDashboardData() {
   vehicles.forEach(v => {
     const checks = [
       { field: 'insurance_expiry', label: 'Insurance', type: 'permit' },
+      { field: 'fitness_expiry', label: 'Fitness Certificate', type: 'permit' },
+      { field: 'tax_expiry', label: 'Road Tax', type: 'permit' },
       { field: 'permit_expiry', label: 'Permit', type: 'permit' },
       { field: 'puc_expiry', label: 'PUC', type: 'puc' },
       { field: 'service_due', label: 'Service Due', type: 'info' },
@@ -907,7 +935,7 @@ export async function generateFinancialReport(startDate, endDate) {
     const exp = parseFloat(e.expense) || 0;
     const driverPay = e.driver_share_amount !== undefined 
       ? parseFloat(e.driver_share_amount) 
-      : (Math.max(0, gross - exp) * (parseFloat(e.driver_share_percentage) || 50) / 100);
+      : (Math.max(0, gross - exp) * (e.driver_share_percentage !== undefined && e.driver_share_percentage !== '' ? parseFloat(e.driver_share_percentage) : 50) / 100);
     const ola = parseFloat(e.amount_ola) || 0;
     const uber = parseFloat(e.amount_uber) || 0;
     const rapido = parseFloat(e.amount_rapido) || 0;

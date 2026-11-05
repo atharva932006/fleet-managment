@@ -37,7 +37,7 @@ const DriverDashboard = ({ toggleTheme, darkMode }) => {
   }, [user]);
 
   const driver = data.driverDetails || user;
-  const sharePercentage = driver?.share_percentage || 50;
+  const sharePercentage = (driver?.share_percentage !== undefined && driver?.share_percentage !== '') ? driver.share_percentage : 50;
 
   return (
     <div className="driver-shell" style={{ maxWidth: '600px', margin: '0 auto', padding: '16px' }}>
